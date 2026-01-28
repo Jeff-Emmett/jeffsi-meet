@@ -69,6 +69,7 @@ import { IRemoteControlState } from '../remote-control/reducer';
 import { IScreenShareState } from '../screen-share/reducer';
 import { IScreenshotCaptureState } from '../screenshot-capture/reducer';
 import { IShareRoomState } from '../share-room/reducer';
+import { ISharedMusicState } from '../shared-music/reducer';
 import { ISharedVideoState } from '../shared-video/reducer';
 import { ISpeakerStatsState } from '../speaker-stats/reducer';
 import { ISubtitlesState } from '../subtitles/reducer';
@@ -159,6 +160,7 @@ export interface IReduxState {
     'features/screenshot-capture': IScreenshotCaptureState;
     'features/settings': ISettingsState;
     'features/share-room': IShareRoomState;
+    'features/shared-music': ISharedMusicState;
     'features/shared-video': ISharedVideoState;
     'features/speaker-stats': ISpeakerStatsState;
     'features/subtitles': ISubtitlesState;

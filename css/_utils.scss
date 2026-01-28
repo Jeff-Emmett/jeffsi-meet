@@ -2,6 +2,15 @@
     transform: scaleX(-1);
 }
 
+/**
+ * Positions an element offscreen for audio-only players.
+ */
+.okhide {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+}
+
 .hidden {
     display: none;
 }
