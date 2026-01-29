@@ -15,6 +15,7 @@ import { isSpotTV } from '../../base/util/spot';
 import StageParticipantNameLabel from '../../display-name/components/web/StageParticipantNameLabel';
 import { FILMSTRIP_BREAKPOINT } from '../../filmstrip/constants';
 import { getVerticalViewMaxWidth, isFilmstripResizable } from '../../filmstrip/functions.web';
+import { SharedMusicPlayer } from '../../shared-music/components';
 import SharedVideo from '../../shared-video/components/web/SharedVideo';
 import Captions from '../../subtitles/components/web/Captions';
 import { areClosedCaptionsEnabled } from '../../subtitles/functions.any';
@@ -218,6 +219,7 @@ class LargeVideo extends Component<IProps> {
                 ref = { this._containerRef }
                 style = { style }>
                 <SharedVideo />
+                <SharedMusicPlayer />
                 {_whiteboardEnabled && <Whiteboard />}
                 <div id = 'etherpad' />
 

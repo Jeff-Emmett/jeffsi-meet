@@ -2,6 +2,7 @@ import React from 'react';
 import { connect } from 'react-redux';
 
 import { PLAYBACK_STATUSES } from '../../constants';
+import logger from '../../logger';
 
 import AbstractMusicManager, {
     IProps,
@@ -15,6 +16,7 @@ import AbstractMusicManager, {
  */
 class DirectAudioManager extends AbstractMusicManager {
     audioRef: React.RefObject<HTMLAudioElement>;
+    _autoplayBlocked: boolean;
 
     /**
      * Initializes a new DirectAudioManager instance.
@@ -26,6 +28,7 @@ class DirectAudioManager extends AbstractMusicManager {
         super(props);
 
         this.audioRef = React.createRef();
+        this._autoplayBlocked = false;
     }
 
     /**
@@ -98,12 +101,40 @@ class DirectAudioManager extends AbstractMusicManager {
     }
 
     /**
-     * Plays music.
+     * Plays music. Handles autoplay restrictions on mobile browsers.
      *
-     * @returns {void}
+     * @returns {Promise<void> | undefined}
      */
     override play() {
-        return this.player?.play();
+        const playPromise = this.player?.play();
+
+        if (playPromise !== undefined) {
+            playPromise.catch((error: Error) => {
+                if (error.name === 'NotAllowedError') {
+                    logger.warn('Autoplay blocked by browser. Music will play on user interaction.');
+                    this._autoplayBlocked = true;
+
+                    // Add a one-time click listener to resume playback
+                    const resumePlayback = () => {
+                        if (this._autoplayBlocked && this.player) {
+                            this.player.play().catch(() => {
+                                // Ignore if still blocked
+                            });
+                            this._autoplayBlocked = false;
+                        }
+                        document.removeEventListener('click', resumePlayback);
+                        document.removeEventListener('touchstart', resumePlayback);
+                    };
+
+                    document.addEventListener('click', resumePlayback, { once: true });
+                    document.addEventListener('touchstart', resumePlayback, { once: true });
+                } else {
+                    logger.error('Error playing music:', error);
+                }
+            });
+        }
+
+        return playPromise;
     }
 
     /**
