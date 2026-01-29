@@ -885,6 +885,7 @@ var config = {
     //    'select-background',
     //    'settings',
     //    'shareaudio',
+    //    'sharedmusic',
     //    'sharedvideo',
     //    'shortcuts',
     //    'stats',
