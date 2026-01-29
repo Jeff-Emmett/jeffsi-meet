@@ -1,0 +1,29 @@
+# Build artifacts
+build/
+node_modules/
+
+# Git
+.git/
+.github/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Mobile
+android/
+ios/
+
+# Tests
+tests/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Development files
+.devcontainer/
+*.log

@@ -1,0 +1,16 @@
+# Jeffsi Meet - Docker Compose for building custom web image
+# This builds the custom web image locally for testing
+
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jeffsi-meet-web:latest
+    ports:
+      - "8080:80"
+    environment:
+      - PUBLIC_URL=http://localhost:8080
+      - DISABLE_HTTPS=1
