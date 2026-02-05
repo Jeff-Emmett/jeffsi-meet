@@ -61,13 +61,12 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       POSTGRES_URL: postgresql://meeting_intelligence:${POSTGRES_PASSWORD:-changeme}@postgres:5432/meeting_intelligence
-      WHISPER_MODEL: small
+      WHISPER_MODEL: /models/ggml-small.bin
       WHISPER_THREADS: 8
       NUM_WORKERS: 4
     volumes:
       - recordings:/recordings:ro
       - audio_processed:/audio
-      - whisper_models:/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,13 +121,14 @@ services:
     restart: unless-stopped
     privileged: true
     environment:
-      # XMPP Connection
-      XMPP_SERVER: ${XMPP_SERVER:-meet.jeffemmett.com}
-      XMPP_DOMAIN: ${XMPP_DOMAIN:-meet.jeffemmett.com}
-      XMPP_AUTH_DOMAIN: auth.${XMPP_DOMAIN:-meet.jeffemmett.com}
-      XMPP_INTERNAL_MUC_DOMAIN: internal.auth.${XMPP_DOMAIN:-meet.jeffemmett.com}
-      XMPP_RECORDER_DOMAIN: recorder.${XMPP_DOMAIN:-meet.jeffemmett.com}
-      XMPP_MUC_DOMAIN: muc.${XMPP_DOMAIN:-meet.jeffemmett.com}
+      # XMPP Connection - uses internal Docker DNS names
+      XMPP_SERVER: jeffsi-meet-prosody-1
+      XMPP_DOMAIN: meet.jitsi
+      XMPP_AUTH_DOMAIN: auth.meet.jitsi
+      XMPP_INTERNAL_MUC_DOMAIN: internal-muc.meet.jitsi
+      XMPP_RECORDER_DOMAIN: hidden.meet.jitsi
+      XMPP_MUC_DOMAIN: muc.meet.jitsi
+      XMPP_TRUST_ALL_CERTS: "true"
 
       # Jibri Settings
       JIBRI_BREWERY_MUC: JibriBrewery
@@ -145,7 +145,7 @@ services:
       CHROMIUM_FLAGS: --use-fake-ui-for-media-stream,--start-maximized,--kiosk,--enabled,--disable-infobars,--autoplay-policy=no-user-gesture-required
 
       # Public URL
-      PUBLIC_URL: https://${XMPP_DOMAIN:-meet.jeffemmett.com}
+      PUBLIC_URL: https://meet.jeffemmett.com
 
       # Timezone
       TZ: UTC
@@ -161,6 +161,7 @@ services:
     shm_size: 2gb
     networks:
       - meeting-intelligence
+      - jeffsi-meet
 
 volumes:
   postgres_data:
@@ -177,10 +178,12 @@ volumes:
       type: none
       o: bind
       device: /opt/meetings/audio
-  whisper_models:
 
 networks:
   meeting-intelligence:
     driver: bridge
   traefik-public:
     external: true
+  jeffsi-meet:
+    external: true
+    name: jeffsi-meet_meet.jitsi

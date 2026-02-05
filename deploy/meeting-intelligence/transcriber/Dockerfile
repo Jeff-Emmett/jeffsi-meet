@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     git \
     ffmpeg \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Build whisper.cpp
@@ -30,10 +31,12 @@ RUN cd /build/whisper.cpp && \
 # Production image
 FROM python:3.11-slim
 
-# Install runtime dependencies
+# Install runtime dependencies and build tools (for compiling Python packages)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
+    curl \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy whisper binary and models
@@ -46,6 +49,9 @@ WORKDIR /app
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Remove build tools to reduce image size
+RUN apt-get purge -y build-essential && apt-get autoremove -y
 
 # Copy application code
 COPY app/ ./app/
