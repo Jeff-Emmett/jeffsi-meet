@@ -1,0 +1,186 @@
+# Meeting Intelligence System - Full Docker Compose
+# Deploy on Netcup RS 8000 at /opt/meeting-intelligence/
+#
+# Components:
+# - Jibri (recording)
+# - Transcriber (whisper.cpp + diarization)
+# - Meeting Intelligence API
+# - PostgreSQL (storage)
+# - Redis (job queue)
+
+services:
+  # ============================================================
+  # PostgreSQL Database
+  # ============================================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: meeting-intelligence-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: meeting_intelligence
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: meeting_intelligence
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meeting_intelligence"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - meeting-intelligence
+
+  # ============================================================
+  # Redis Job Queue
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: meeting-intelligence-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - meeting-intelligence
+
+  # ============================================================
+  # Transcription Service (whisper.cpp + diarization)
+  # ============================================================
+  transcriber:
+    build:
+      context: ./transcriber
+      dockerfile: Dockerfile
+    container_name: meeting-intelligence-transcriber
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379
+      POSTGRES_URL: postgresql://meeting_intelligence:${POSTGRES_PASSWORD:-changeme}@postgres:5432/meeting_intelligence
+      WHISPER_MODEL: small
+      WHISPER_THREADS: 8
+      NUM_WORKERS: 4
+    volumes:
+      - recordings:/recordings:ro
+      - audio_processed:/audio
+      - whisper_models:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '12'
+          memory: 16G
+    networks:
+      - meeting-intelligence
+
+  # ============================================================
+  # Meeting Intelligence API
+  # ============================================================
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: meeting-intelligence-api
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379
+      POSTGRES_URL: postgresql://meeting_intelligence:${POSTGRES_PASSWORD:-changeme}@postgres:5432/meeting_intelligence
+      OLLAMA_URL: http://host.docker.internal:11434
+      RECORDINGS_PATH: /recordings
+      SECRET_KEY: ${API_SECRET_KEY:-changeme}
+    volumes:
+      - recordings:/recordings
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.meeting-intelligence.rule=Host(`meet.jeffemmett.com`) && PathPrefix(`/api/intelligence`)"
+      - "traefik.http.services.meeting-intelligence.loadbalancer.server.port=8000"
+      - "traefik.http.routers.meeting-intelligence.middlewares=strip-intelligence-prefix"
+      - "traefik.http.middlewares.strip-intelligence-prefix.stripprefix.prefixes=/api/intelligence"
+    networks:
+      - meeting-intelligence
+      - traefik-public
+
+  # ============================================================
+  # Jibri Recording Service
+  # ============================================================
+  jibri:
+    image: jitsi/jibri:stable-9584
+    container_name: meeting-intelligence-jibri
+    restart: unless-stopped
+    privileged: true
+    environment:
+      # XMPP Connection
+      XMPP_SERVER: ${XMPP_SERVER:-meet.jeffemmett.com}
+      XMPP_DOMAIN: ${XMPP_DOMAIN:-meet.jeffemmett.com}
+      XMPP_AUTH_DOMAIN: auth.${XMPP_DOMAIN:-meet.jeffemmett.com}
+      XMPP_INTERNAL_MUC_DOMAIN: internal.auth.${XMPP_DOMAIN:-meet.jeffemmett.com}
+      XMPP_RECORDER_DOMAIN: recorder.${XMPP_DOMAIN:-meet.jeffemmett.com}
+      XMPP_MUC_DOMAIN: muc.${XMPP_DOMAIN:-meet.jeffemmett.com}
+
+      # Jibri Settings
+      JIBRI_BREWERY_MUC: JibriBrewery
+      JIBRI_PENDING_TIMEOUT: 90
+      JIBRI_RECORDING_DIR: /recordings
+      JIBRI_FINALIZE_RECORDING_SCRIPT_PATH: /config/finalize.sh
+      JIBRI_XMPP_USER: jibri
+      JIBRI_XMPP_PASSWORD: ${JIBRI_XMPP_PASSWORD:-changeme}
+      JIBRI_RECORDER_USER: recorder
+      JIBRI_RECORDER_PASSWORD: ${JIBRI_RECORDER_PASSWORD:-changeme}
+
+      # Display Settings
+      DISPLAY: ":0"
+      CHROMIUM_FLAGS: --use-fake-ui-for-media-stream,--start-maximized,--kiosk,--enabled,--disable-infobars,--autoplay-policy=no-user-gesture-required
+
+      # Public URL
+      PUBLIC_URL: https://${XMPP_DOMAIN:-meet.jeffemmett.com}
+
+      # Timezone
+      TZ: UTC
+    volumes:
+      - recordings:/recordings
+      - ./jibri/config:/config
+      - /dev/shm:/dev/shm
+    cap_add:
+      - SYS_ADMIN
+      - NET_BIND_SERVICE
+    security_opt:
+      - seccomp:unconfined
+    shm_size: 2gb
+    networks:
+      - meeting-intelligence
+
+volumes:
+  postgres_data:
+  redis_data:
+  recordings:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/meetings/recordings
+  audio_processed:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/meetings/audio
+  whisper_models:
+
+networks:
+  meeting-intelligence:
+    driver: bridge
+  traefik-public:
+    external: true
