@@ -3,10 +3,15 @@ import { IJitsiConference } from '../base/conference/reducer';
 import { toState } from '../base/redux/functions';
 
 import {
+    DAILYMOTION_URL_DOMAIN,
     PLAYBACK_START,
     PLAYBACK_STATUSES,
     SHARED_MUSIC,
+    SOUNDCLOUD_URL_DOMAIN,
     SOURCE_TYPES,
+    SPOTIFY_URL_DOMAIN,
+    TWITCH_URL_DOMAIN,
+    VIMEO_URL_DOMAIN,
     YOUTUBE_MUSIC_URL_DOMAIN,
     YOUTUBE_URL_DOMAIN
 } from './constants';
@@ -31,6 +36,86 @@ function getYoutubeId(url: string): string | null {
 }
 
 /**
+ * Extracts Vimeo video ID from URL.
+ *
+ * @param {string} url - The entered URL.
+ * @returns {string | null} The Vimeo video id if matched.
+ */
+function getVimeoId(url: string): string | null {
+    if (!url) {
+        return null;
+    }
+
+    // Matches vimeo.com/123456789 or player.vimeo.com/video/123456789
+    const p = /(?:https?:\/\/)?(?:www\.|player\.)?vimeo\.com\/(?:video\/)?(\d+)/;
+    const result = url.match(p);
+
+    return result ? result[1] : null;
+}
+
+/**
+ * Extracts Dailymotion video ID from URL.
+ *
+ * @param {string} url - The entered URL.
+ * @returns {string | null} The Dailymotion video id if matched.
+ */
+function getDailymotionId(url: string): string | null {
+    if (!url) {
+        return null;
+    }
+
+    // Matches dailymotion.com/video/x123abc or dai.ly/x123abc
+    const p = /(?:https?:\/\/)?(?:www\.)?(?:dailymotion\.com\/video\/|dai\.ly\/)([a-zA-Z0-9]+)/;
+    const result = url.match(p);
+
+    return result ? result[1] : null;
+}
+
+/**
+ * Extracts Twitch channel or video from URL.
+ *
+ * @param {string} url - The entered URL.
+ * @returns {Object|null} The Twitch info if matched.
+ */
+function getTwitchInfo(url: string): { id: string; type: string; } | null {
+    if (!url) {
+        return null;
+    }
+
+    // Matches twitch.tv/channel or twitch.tv/videos/123456
+    const channelMatch = url.match(/(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-zA-Z0-9_]+)(?:\?|$)/);
+    const videoMatch = url.match(/(?:https?:\/\/)?(?:www\.)?twitch\.tv\/videos\/(\d+)/);
+
+    if (videoMatch) {
+        return { type: 'video', id: videoMatch[1] };
+    }
+
+    if (channelMatch && channelMatch[1] !== 'videos') {
+        return { type: 'channel', id: channelMatch[1] };
+    }
+
+    return null;
+}
+
+/**
+ * Extracts Spotify track/album/playlist from URL.
+ *
+ * @param {string} url - The entered URL.
+ * @returns {Object|null} The Spotify info if matched.
+ */
+function getSpotifyInfo(url: string): { id: string; type: string; } | null {
+    if (!url) {
+        return null;
+    }
+
+    // Matches open.spotify.com/track/123, /album/123, /playlist/123
+    const p = /(?:https?:\/\/)?open\.spotify\.com\/(track|album|playlist|episode|show)\/([a-zA-Z0-9]+)/;
+    const result = url.match(p);
+
+    return result ? { type: result[1], id: result[2] } : null;
+}
+
+/**
  * Checks if the status is one that is actually sharing music - playing, pause or start.
  *
  * @param {string} status - The shared music status.
@@ -47,18 +132,53 @@ export function isSharingStatus(status: string): boolean {
  * @returns {SourceType} The source type.
  */
 export function getSourceType(url: string): SourceType {
-    const youtubeId = getYoutubeId(url);
-
-    if (youtubeId) {
+    if (getYoutubeId(url)) {
         return SOURCE_TYPES.YOUTUBE;
+    }
+
+    if (getVimeoId(url)) {
+        return SOURCE_TYPES.VIMEO;
+    }
+
+    if (getDailymotionId(url)) {
+        return SOURCE_TYPES.DAILYMOTION;
+    }
+
+    if (getTwitchInfo(url)) {
+        return SOURCE_TYPES.TWITCH;
+    }
+
+    if (getSpotifyInfo(url)) {
+        return SOURCE_TYPES.SPOTIFY;
     }
 
     try {
         const urlObj = new URL(url);
+        const hostname = urlObj.hostname.toLowerCase();
 
-        if (urlObj.hostname.includes(YOUTUBE_URL_DOMAIN)
-            || urlObj.hostname.includes(YOUTUBE_MUSIC_URL_DOMAIN)) {
+        if (hostname.includes(YOUTUBE_URL_DOMAIN)
+            || hostname.includes(YOUTUBE_MUSIC_URL_DOMAIN)) {
             return SOURCE_TYPES.YOUTUBE;
+        }
+
+        if (hostname.includes(VIMEO_URL_DOMAIN)) {
+            return SOURCE_TYPES.VIMEO;
+        }
+
+        if (hostname.includes(SOUNDCLOUD_URL_DOMAIN)) {
+            return SOURCE_TYPES.SOUNDCLOUD;
+        }
+
+        if (hostname.includes(SPOTIFY_URL_DOMAIN)) {
+            return SOURCE_TYPES.SPOTIFY;
+        }
+
+        if (hostname.includes(DAILYMOTION_URL_DOMAIN)) {
+            return SOURCE_TYPES.DAILYMOTION;
+        }
+
+        if (hostname.includes(TWITCH_URL_DOMAIN)) {
+            return SOURCE_TYPES.TWITCH;
         }
     } catch (_) {
         // Not a valid URL
@@ -68,12 +188,16 @@ export function getSourceType(url: string): SourceType {
 }
 
 /**
- * Extracts a YouTube ID or validates a direct URL.
+ * Extracts media info from URL based on the source type.
  *
  * @param {string} input - The user input.
- * @returns {Object | undefined} An object with url and sourceType, or undefined.
+ * @returns {Object | undefined} An object with url, sourceType, and optional embedInfo.
  */
-export function extractMusicUrl(input: string): { sourceType: SourceType; url: string; } | undefined {
+export function extractMusicUrl(input: string): {
+    embedInfo?: { id: string; type?: string; };
+    sourceType: SourceType;
+    url: string;
+} | undefined {
     if (!input) {
         return;
     }
@@ -84,33 +208,75 @@ export function extractMusicUrl(input: string): { sourceType: SourceType; url: s
         return;
     }
 
+    // YouTube
     const youtubeId = getYoutubeId(trimmedLink);
 
     if (youtubeId) {
         return {
             url: youtubeId,
-            sourceType: SOURCE_TYPES.YOUTUBE
+            sourceType: SOURCE_TYPES.YOUTUBE,
+            embedInfo: { id: youtubeId }
         };
     }
 
-    // Check if the URL is valid
+    // Vimeo
+    const vimeoId = getVimeoId(trimmedLink);
+
+    if (vimeoId) {
+        return {
+            url: trimmedLink,
+            sourceType: SOURCE_TYPES.VIMEO,
+            embedInfo: { id: vimeoId }
+        };
+    }
+
+    // Dailymotion
+    const dailymotionId = getDailymotionId(trimmedLink);
+
+    if (dailymotionId) {
+        return {
+            url: trimmedLink,
+            sourceType: SOURCE_TYPES.DAILYMOTION,
+            embedInfo: { id: dailymotionId }
+        };
+    }
+
+    // Twitch
+    const twitchInfo = getTwitchInfo(trimmedLink);
+
+    if (twitchInfo) {
+        return {
+            url: trimmedLink,
+            sourceType: SOURCE_TYPES.TWITCH,
+            embedInfo: twitchInfo
+        };
+    }
+
+    // Spotify
+    const spotifyInfo = getSpotifyInfo(trimmedLink);
+
+    if (spotifyInfo) {
+        return {
+            url: trimmedLink,
+            sourceType: SOURCE_TYPES.SPOTIFY,
+            embedInfo: spotifyInfo
+        };
+    }
+
+    // Check if the URL is valid for other sources
     try {
         const urlObj = new URL(trimmedLink);
+        const hostname = urlObj.hostname.toLowerCase();
 
-        // Check if it's a YouTube URL
-        if (urlObj.hostname.includes(YOUTUBE_URL_DOMAIN)
-            || urlObj.hostname.includes(YOUTUBE_MUSIC_URL_DOMAIN)) {
-            const videoId = getYoutubeId(trimmedLink);
-
-            if (videoId) {
-                return {
-                    url: videoId,
-                    sourceType: SOURCE_TYPES.YOUTUBE
-                };
-            }
+        // SoundCloud - we use the full URL for embedding
+        if (hostname.includes(SOUNDCLOUD_URL_DOMAIN)) {
+            return {
+                url: trimmedLink,
+                sourceType: SOURCE_TYPES.SOUNDCLOUD
+            };
         }
 
-        // It's a direct URL
+        // It's a direct URL (audio/video file)
         return {
             url: trimmedLink,
             sourceType: SOURCE_TYPES.DIRECT

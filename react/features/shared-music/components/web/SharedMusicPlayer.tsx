@@ -8,6 +8,7 @@ import { isSharingStatus } from '../../functions';
 import { SourceType } from '../../types';
 
 import DirectAudioManager from './DirectAudioManager';
+import EmbedPlayerManager from './EmbedPlayerManager';
 import YouTubeMusicManager from './YouTubeMusicManager';
 
 interface IProps {
@@ -34,6 +35,17 @@ interface IProps {
 }
 
 /**
+ * Embedded source types that use iframe players.
+ */
+const EMBED_SOURCE_TYPES: readonly string[] = [
+    SOURCE_TYPES.VIMEO,
+    SOURCE_TYPES.SOUNDCLOUD,
+    SOURCE_TYPES.SPOTIFY,
+    SOURCE_TYPES.DAILYMOTION,
+    SOURCE_TYPES.TWITCH
+];
+
+/**
  * Component that manages and renders the appropriate music player.
  */
 class SharedMusicPlayer extends Component<IProps> {
@@ -50,10 +62,17 @@ class SharedMusicPlayer extends Component<IProps> {
             return null;
         }
 
+        // YouTube has its own dedicated player
         if (sourceType === SOURCE_TYPES.YOUTUBE) {
             return <YouTubeMusicManager musicId = { musicUrl } />;
         }
 
+        // Vimeo, SoundCloud, Spotify, Dailymotion, Twitch use iframe embeds
+        if (sourceType && EMBED_SOURCE_TYPES.includes(sourceType)) {
+            return <EmbedPlayerManager musicId = { musicUrl } />;
+        }
+
+        // Direct audio/video files use HTML5 audio element
         return <DirectAudioManager musicId = { musicUrl } />;
     }
 

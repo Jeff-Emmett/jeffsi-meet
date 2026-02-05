@@ -10,6 +10,28 @@ import { isSharingStatus } from '../../functions';
 
 import SharedMusicPlayer from './SharedMusicPlayer';
 
+/**
+ * Source types that render video content (should show iframe player).
+ */
+const VIDEO_SOURCE_TYPES: readonly string[] = [
+    SOURCE_TYPES.YOUTUBE,
+    SOURCE_TYPES.VIMEO,
+    SOURCE_TYPES.DAILYMOTION,
+    SOURCE_TYPES.TWITCH
+];
+
+/**
+ * Source types that have embedded controls (user interacts with iframe).
+ */
+const EMBEDDED_CONTROL_TYPES: readonly string[] = [
+    SOURCE_TYPES.YOUTUBE,
+    SOURCE_TYPES.VIMEO,
+    SOURCE_TYPES.SOUNDCLOUD,
+    SOURCE_TYPES.SPOTIFY,
+    SOURCE_TYPES.DAILYMOTION,
+    SOURCE_TYPES.TWITCH
+];
+
 interface IProps {
     /**
      * The participant ID (music URL).
@@ -35,7 +57,12 @@ const SharedMusicTile: React.FC<IProps> = ({ participantId }) => {
     const isOwner = ownerId === localParticipant?.id;
     const isMusicShared = isSharingStatus(status ?? '');
     const isPlaying = status === PLAYBACK_STATUSES.PLAYING;
-    const isYouTube = sourceType === SOURCE_TYPES.YOUTUBE;
+
+    // Determine if this source type shows video content
+    const isVideoSource = sourceType && VIDEO_SOURCE_TYPES.includes(sourceType);
+
+    // Determine if this source type has embedded controls (so we don't show our own)
+    const hasEmbeddedControls = sourceType && EMBEDDED_CONTROL_TYPES.includes(sourceType);
 
     const handlePlayPause = useCallback((e: React.MouseEvent) => {
         e.stopPropagation(); // Prevent thumbnail click from pinning
@@ -61,27 +88,27 @@ const SharedMusicTile: React.FC<IProps> = ({ participantId }) => {
 
     return (
         <div className = 'shared-music-tile'>
-            {/* Render the actual player for YouTube videos */}
-            {isYouTube ? (
+            {/* Render the actual player for video sources */}
+            {isVideoSource || hasEmbeddedControls ? (
                 <div className = 'shared-music-player-wrapper'>
                     <SharedMusicPlayer />
                 </div>
             ) : (
-                /* For audio-only, show a background with controls */
+                /* For direct audio files, show a background with controls */
                 <div className = 'shared-music-audio-bg'>
                     <SharedMusicPlayer />
                 </div>
             )}
 
-            {/* Overlay with title and controls for non-owners */}
+            {/* Overlay with title and controls */}
             <div className = 'shared-music-controls-overlay'>
                 {/* Title */}
                 <div className = 'shared-music-title'>
-                    {title || 'Shared Music'}
+                    {title || 'Shared Media'}
                 </div>
 
-                {/* Play/Pause button (owner only, shown when YouTube controls are hidden) */}
-                {isOwner && !isYouTube && (
+                {/* Play/Pause button (owner only, shown for direct audio without embedded controls) */}
+                {isOwner && !hasEmbeddedControls && (
                     <button
                         aria-label = { isPlaying ? 'Pause' : 'Play' }
                         className = 'shared-music-control-button'
@@ -95,8 +122,8 @@ const SharedMusicTile: React.FC<IProps> = ({ participantId }) => {
                     </button>
                 )}
 
-                {/* Status indicator for non-owners when not YouTube */}
-                {!isOwner && !isYouTube && (
+                {/* Status indicator for non-owners when no embedded controls */}
+                {!isOwner && !hasEmbeddedControls && (
                     <div className = 'shared-music-status'>
                         {isPlaying ? 'Playing' : 'Paused'}
                     </div>
