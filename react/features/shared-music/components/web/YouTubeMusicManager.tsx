@@ -194,14 +194,15 @@ class YouTubeMusicManager extends AbstractMusicManager {
         const options = {
             id: 'sharedMusicPlayer',
             opts: {
-                height: '1',
-                width: '1',
+                height: '100%',
+                width: '100%',
                 playerVars: {
                     'origin': location.origin,
                     'fs': '0',
                     'autoplay': 0,
                     'controls': showControls,
-                    'rel': 0
+                    'rel': 0,
+                    'modestbranding': 1
                 }
             },
             onError: (e: any) => this.onError(e),
@@ -219,9 +220,9 @@ class YouTubeMusicManager extends AbstractMusicManager {
      * @inheritdoc
      */
     override render() {
-        // Render the YouTube player hidden (offscreen) since we only need audio
+        // Render the YouTube player visible for video playback in the tile
         return (
-            <div className = 'okhide'>
+            <div className = 'youtube-player-container'>
                 <YouTube
                     { ...this.getPlayerOptions() } />
             </div>

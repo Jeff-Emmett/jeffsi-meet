@@ -1,10 +1,14 @@
+import { batch } from 'react-redux';
+
 import { IStore } from '../app/types';
 import { CONFERENCE_JOIN_IN_PROGRESS, CONFERENCE_LEFT } from '../base/conference/actionTypes';
 import { getCurrentConference } from '../base/conference/functions';
 import { IJitsiConference } from '../base/conference/reducer';
 import { MEDIA_TYPE } from '../base/media/constants';
 import { PARTICIPANT_LEFT } from '../base/participants/actionTypes';
-import { getLocalParticipant } from '../base/participants/functions';
+import { participantJoined, participantLeft } from '../base/participants/actions';
+import { getLocalParticipant, getParticipantById } from '../base/participants/functions';
+import { FakeParticipant } from '../base/participants/types';
 import MiddlewareRegistry from '../base/redux/MiddlewareRegistry';
 
 import { RESET_SHARED_MUSIC_STATUS, SET_SHARED_MUSIC_STATUS } from './actionTypes';
@@ -13,6 +17,7 @@ import {
     setSharedMusicStatus
 } from './actions';
 import {
+    MUSIC_PLAYER_PARTICIPANT_NAME,
     PLAYBACK_START,
     PLAYBACK_STATUSES,
     SHARED_MUSIC,
@@ -63,6 +68,12 @@ MiddlewareRegistry.register(store => next => action => {
                 }
 
                 if (sharedMusicStatus === 'stop') {
+                    const musicParticipant = getParticipantById(state, value);
+
+                    dispatch(participantLeft(value, conference, {
+                        fakeParticipant: musicParticipant?.fakeParticipant
+                    }));
+
                     if (localParticipantId !== attributes.from) {
                         dispatch(resetSharedMusicStatus());
                     }
@@ -76,10 +87,14 @@ MiddlewareRegistry.register(store => next => action => {
         break;
     case PARTICIPANT_LEFT: {
         const state = getState();
-        const { ownerId: stateOwnerId } = state['features/shared-music'];
+        const conference = getCurrentConference(state);
+        const { ownerId: stateOwnerId, musicUrl: stateMusicUrl } = state['features/shared-music'];
 
         if (action.participant.id === stateOwnerId) {
-            dispatch(resetSharedMusicStatus());
+            batch(() => {
+                dispatch(resetSharedMusicStatus());
+                dispatch(participantLeft(stateMusicUrl ?? '', conference));
+            });
         }
         break;
     }
@@ -154,17 +169,18 @@ MiddlewareRegistry.register(store => next => action => {
 
 /**
  * Handles the playing, pause and start statuses for the shared music.
+ * Dispatches participantJoined event to show music as a participant tile.
  * Sets the SharedMusicStatus if the event was triggered by the local user.
  *
  * @param {Store} store - The redux store.
  * @param {string} musicUrl - The id/url of the music to be shared.
  * @param {Object} attributes - The attributes received from the share music command.
- * @param {JitsiConference} _conference - The current conference.
+ * @param {JitsiConference} conference - The current conference.
  * @returns {void}
  */
 function handleSharingMusicStatus(store: IStore, musicUrl: string,
         attributes: IMusicCommandAttributes,
-        _conference: IJitsiConference) {
+        conference: IJitsiConference) {
     const { dispatch, getState } = store;
     const localParticipantId = getLocalParticipant(getState())?.id;
     const oldStatus = getState()['features/shared-music']?.status ?? '';
@@ -179,8 +195,22 @@ function handleSharingMusicStatus(store: IStore, musicUrl: string,
 
     const sourceType = (attributes.sourceType as SourceType) || SOURCE_TYPES.DIRECT;
 
-    // If music was not started, set the initial status
+    // If music was not started (no participant), create the fake participant
+    // This can be triggered by start, playing, or paused commands (joining late)
     if (attributes.state === PLAYBACK_START || !isSharingStatus(oldStatus)) {
+        // Create a fake participant for the music player (shows as a tile, not pinned)
+        const displayName = attributes.title || MUSIC_PLAYER_PARTICIPANT_NAME;
+
+        dispatch(participantJoined({
+            conference,
+            fakeParticipant: FakeParticipant.SharedMusic,
+            id: musicUrl,
+            name: displayName
+        }));
+
+        // Note: We intentionally do NOT pin the participant so it appears as a tile
+        // instead of taking over the whole screen like shared video does
+
         if (localParticipantId === attributes.from) {
             dispatch(setSharedMusicStatus({
                 musicUrl,

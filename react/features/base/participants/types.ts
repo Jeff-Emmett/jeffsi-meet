@@ -3,6 +3,7 @@ import { IJitsiConference } from '../conference/reducer';
 export enum FakeParticipant {
     LocalScreenShare = 'LocalScreenShare',
     RemoteScreenShare = 'RemoteScreenShare',
+    SharedMusic = 'SharedMusic',
     SharedVideo = 'SharedVideo',
     Whiteboard = 'Whiteboard'
 }

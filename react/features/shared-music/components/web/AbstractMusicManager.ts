@@ -4,12 +4,9 @@ import { PureComponent } from 'react';
 import { IReduxState, IStore } from '../../../app/types';
 import { getCurrentConference } from '../../../base/conference/functions';
 import { IJitsiConference } from '../../../base/conference/reducer';
-import { MEDIA_TYPE } from '../../../base/media/constants';
 import { getLocalParticipant } from '../../../base/participants/functions';
-import { isLocalTrackMuted } from '../../../base/tracks/functions';
 import { showWarningNotification } from '../../../notifications/actions';
 import { NOTIFICATION_TIMEOUT_TYPE } from '../../../notifications/constants';
-import { muteLocal } from '../../../video-menu/actions.any';
 import { setSharedMusicStatus, stopSharedMusic } from '../../actions';
 import { PLAYBACK_STATUSES } from '../../constants';
 import logger from '../../logger';
@@ -43,11 +40,6 @@ export interface IProps {
     _displayWarning: Function;
 
     /**
-     * Indicates whether the local audio is muted.
-     */
-    _isLocalAudioMuted: boolean;
-
-    /**
      * Is the music shared by the local user.
      */
     _isOwner: boolean;
@@ -56,11 +48,6 @@ export interface IProps {
      * The music URL.
      */
     _musicUrl?: string;
-
-    /**
-     * Mutes local audio track.
-     */
-    _muteLocal: Function;
 
     /**
      * Store flag for muted state.
@@ -205,7 +192,6 @@ class AbstractMusicManager extends PureComponent<IProps> {
      * @returns {void}
      */
     onPlay() {
-        this.smartAudioMute();
         this.fireUpdateSharedMusicEvent();
     }
 
@@ -224,13 +210,6 @@ class AbstractMusicManager extends PureComponent<IProps> {
      * @returns {void}
      */
     onVolumeChange() {
-        const volume = this.getVolume();
-        const muted = this.isMuted();
-
-        if (Number(volume) > 0 && !muted) {
-            this.smartAudioMute();
-        }
-
         this.fireUpdatePlayingMusicEvent();
     }
 
@@ -278,34 +257,6 @@ class AbstractMusicManager extends PureComponent<IProps> {
             muted: this.isMuted(),
             sourceType: _sourceType
         });
-    }
-
-    /**
-     * Indicates if the player volume is currently on. This will return true if
-     * we have an available player, which is currently in a PLAYING state,
-     * which isn't muted and has its volume greater than 0.
-     *
-     * @returns {boolean} Indicating if the volume of the shared music is
-     * currently on.
-     */
-    isSharedMusicVolumeOn() {
-        return this.getPlaybackStatus() === PLAYBACK_STATUSES.PLAYING
-                && !this.isMuted()
-                && Number(this.getVolume()) > 0;
-    }
-
-    /**
-     * Smart mike mute. If the mike isn't currently muted and the shared music
-     * volume is on we mute the mike.
-     *
-     * @returns {void}
-     */
-    smartAudioMute() {
-        const { _isLocalAudioMuted, _muteLocal } = this.props;
-
-        if (!_isLocalAudioMuted && this.isSharedMusicVolumeOn()) {
-            _muteLocal(true);
-        }
     }
 
     /**
@@ -412,11 +363,9 @@ export default AbstractMusicManager;
 export function _mapStateToProps(state: IReduxState) {
     const { ownerId, status, time, musicUrl, muted, sourceType } = state['features/shared-music'];
     const localParticipant = getLocalParticipant(state);
-    const _isLocalAudioMuted = isLocalTrackMuted(state['features/base/tracks'], MEDIA_TYPE.AUDIO);
 
     return {
         _conference: getCurrentConference(state),
-        _isLocalAudioMuted,
         _isOwner: ownerId === localParticipant?.id,
         _muted: muted,
         _musicUrl: musicUrl,
@@ -442,9 +391,6 @@ export function _mapDispatchToProps(dispatch: IStore['dispatch']) {
         },
         _stopSharedMusic: () => {
             dispatch(stopSharedMusic());
-        },
-        _muteLocal: (value: boolean) => {
-            dispatch(muteLocal(value, MEDIA_TYPE.AUDIO));
         },
         _setSharedMusicStatus: ({ musicUrl, status, time, ownerId, muted, sourceType }: any) => {
             dispatch(setSharedMusicStatus({

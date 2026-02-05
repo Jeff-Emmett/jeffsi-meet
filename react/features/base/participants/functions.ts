@@ -350,6 +350,16 @@ export function isWhiteboardParticipant(participant?: IParticipant): boolean {
 }
 
 /**
+ * Returns true if the passed in participant is a shared music participant.
+ *
+ * @param {IParticipant|undefined} participant - The participant entity.
+ * @returns {boolean} - True if it's a shared music participant.
+ */
+export function isSharedMusicParticipant(participant?: IParticipant): boolean {
+    return participant?.fakeParticipant === FakeParticipant.SharedMusic;
+}
+
+/**
  * Returns a count of the known remote participants in the passed in redux state.
  *
  * @param {(Function|Object)} stateful - The (whole) redux state, or redux's
