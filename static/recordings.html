@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Recordings - Jeffsi Meet</title>
+    <style>
+        :root {
+            --bg-primary: #0f0a1a;
+            --bg-secondary: #1e1040;
+            --bg-card: #2d1b4e;
+            --accent: #8b5cf6;
+            --accent-hover: #a855f7;
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --border: rgba(139, 92, 246, 0.3);
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-primary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 20px;
+        }
+
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(139, 92, 246, 0.1);
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 24px;
+            min-height: calc(100vh - 150px);
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .meetings-panel {
+            background: rgba(45, 27, 78, 0.5);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .meeting-count {
+            background: var(--accent);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .search-box {
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.3);
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        .search-input::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .meetings-list {
+            max-height: calc(100vh - 300px);
+            overflow-y: auto;
+        }
+
+        .meeting-item {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .meeting-item:hover {
+            background: rgba(139, 92, 246, 0.1);
+        }
+
+        .meeting-item.active {
+            background: rgba(139, 92, 246, 0.2);
+            border-left: 3px solid var(--accent);
+        }
+
+        .meeting-title {
+            font-weight: 500;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .meeting-meta {
+            font-size: 13px;
+            color: var(--text-secondary);
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .status-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .status-ready, .status-summarizing {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+        }
+
+        .status-transcribing, .status-diarizing {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+
+        .status-failed {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--error);
+        }
+
+        .status-recording, .status-extracting_audio {
+            background: rgba(139, 92, 246, 0.2);
+            color: var(--accent);
+        }
+
+        .transcript-panel {
+            background: rgba(45, 27, 78, 0.5);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .transcript-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .transcript-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .transcript-meta {
+            display: flex;
+            gap: 20px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .transcript-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .transcript-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            max-height: calc(100vh - 350px);
+        }
+
+        .segment {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            border-left: 3px solid var(--accent);
+        }
+
+        .segment-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .segment-speaker {
+            font-weight: 500;
+            color: var(--accent);
+        }
+
+        .segment-text {
+            line-height: 1.6;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            padding: 40px;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state-title {
+            font-size: 1.2rem;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--error);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin: 20px;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <a href="/" class="logo">
+                <div class="logo-icon">J</div>
+                <span class="logo-text">Jeffsi Meet</span>
+            </a>
+            <div class="header-actions">
+                <a href="/" class="btn btn-secondary">Join Meeting</a>
+                <button class="btn btn-primary" onclick="refreshMeetings()">Refresh</button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="meetings-panel">
+                <div class="panel-header">
+                    <span class="panel-title">Recordings</span>
+                    <span class="meeting-count" id="meeting-count">0</span>
+                </div>
+                <div class="search-box">
+                    <input type="text" class="search-input" placeholder="Search meetings..." id="search-input" oninput="filterMeetings()">
+                </div>
+                <div class="meetings-list" id="meetings-list">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="transcript-panel">
+                <div id="transcript-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📝</div>
+                        <div class="empty-state-title">Select a meeting</div>
+                        <p>Choose a meeting from the list to view its transcript</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/intelligence';
+        let meetings = [];
+        let selectedMeeting = null;
+
+        // Format date/time
+        function formatDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Format duration
+        function formatDuration(seconds) {
+            if (!seconds) return 'N/A';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        // Format timestamp for transcript
+        function formatTimestamp(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        // Get status badge class
+        function getStatusClass(status) {
+            return `status-${status}`;
+        }
+
+        // Render meetings list
+        function renderMeetings(meetingsToRender) {
+            const container = document.getElementById('meetings-list');
+            document.getElementById('meeting-count').textContent = meetingsToRender.length;
+
+            if (meetingsToRender.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📹</div>
+                        <div class="empty-state-title">No recordings yet</div>
+                        <p>Recordings will appear here after meetings end</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = meetingsToRender.map(meeting => `
+                <div class="meeting-item ${selectedMeeting?.id === meeting.id ? 'active' : ''}"
+                     onclick="selectMeeting('${meeting.id}')">
+                    <div class="meeting-title">
+                        <span>${meeting.title || meeting.conference_name || 'Untitled Meeting'}</span>
+                        <span class="status-badge ${getStatusClass(meeting.status)}">${meeting.status}</span>
+                    </div>
+                    <div class="meeting-meta">
+                        <span>📅 ${formatDate(meeting.started_at)}</span>
+                        ${meeting.duration_seconds ? `<span>⏱️ ${formatDuration(meeting.duration_seconds)}</span>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Filter meetings by search
+        function filterMeetings() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            const filtered = meetings.filter(m =>
+                (m.title || '').toLowerCase().includes(query) ||
+                (m.conference_name || '').toLowerCase().includes(query)
+            );
+            renderMeetings(filtered);
+        }
+
+        // Select a meeting and load transcript
+        async function selectMeeting(id) {
+            selectedMeeting = meetings.find(m => m.id === id);
+            renderMeetings(meetings.filter(m => {
+                const query = document.getElementById('search-input').value.toLowerCase();
+                return (m.title || '').toLowerCase().includes(query) ||
+                       (m.conference_name || '').toLowerCase().includes(query);
+            }));
+
+            const container = document.getElementById('transcript-container');
+            container.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            `;
+
+            try {
+                const response = await fetch(`${API_BASE}/meetings/${id}/transcript`);
+                if (!response.ok) throw new Error('Failed to load transcript');
+                const data = await response.json();
+
+                renderTranscript(selectedMeeting, data);
+            } catch (error) {
+                container.innerHTML = `
+                    <div class="transcript-header">
+                        <div class="transcript-title">${selectedMeeting.title || selectedMeeting.conference_name}</div>
+                    </div>
+                    <div class="error-message">
+                        Failed to load transcript. The meeting may still be processing.
+                    </div>
+                `;
+            }
+        }
+
+        // Render transcript
+        function renderTranscript(meeting, transcriptData) {
+            const container = document.getElementById('transcript-container');
+            const segments = transcriptData.segments || [];
+
+            container.innerHTML = `
+                <div class="transcript-header">
+                    <div class="transcript-title">${meeting.title || meeting.conference_name || 'Meeting Transcript'}</div>
+                    <div class="transcript-meta">
+                        <span>📅 ${formatDate(meeting.started_at)}</span>
+                        <span>⏱️ Duration: ${formatDuration(transcriptData.duration)}</span>
+                        <span>📝 ${segments.length} segments</span>
+                    </div>
+                    <div class="transcript-actions">
+                        <button class="btn btn-secondary" onclick="downloadTranscript('${meeting.id}', 'json')">
+                            Export JSON
+                        </button>
+                        <button class="btn btn-secondary" onclick="copyTranscript()">
+                            Copy Text
+                        </button>
+                    </div>
+                </div>
+                <div class="transcript-content" id="transcript-text">
+                    ${segments.length === 0 ? `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⏳</div>
+                            <div class="empty-state-title">No transcript yet</div>
+                            <p>The transcript is still being processed</p>
+                        </div>
+                    ` : segments.map(seg => `
+                        <div class="segment">
+                            <div class="segment-header">
+                                <span class="segment-speaker">${seg.speaker_label || seg.speaker_name || 'Speaker'}</span>
+                                <span>${formatTimestamp(seg.start_time)} - ${formatTimestamp(seg.end_time)}</span>
+                            </div>
+                            <div class="segment-text">${seg.text}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        // Download transcript
+        async function downloadTranscript(id, format) {
+            try {
+                const response = await fetch(`${API_BASE}/meetings/${id}/transcript`);
+                const data = await response.json();
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `transcript-${id}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                alert('Failed to download transcript');
+            }
+        }
+
+        // Copy transcript text
+        function copyTranscript() {
+            const content = document.getElementById('transcript-text');
+            const segments = content.querySelectorAll('.segment-text');
+            const text = Array.from(segments).map(s => s.textContent).join('\n\n');
+
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Transcript copied to clipboard!');
+            }).catch(() => {
+                alert('Failed to copy transcript');
+            });
+        }
+
+        // Fetch meetings from API
+        async function fetchMeetings() {
+            try {
+                const response = await fetch(`${API_BASE}/meetings`);
+                if (!response.ok) throw new Error('Failed to fetch meetings');
+                const data = await response.json();
+                meetings = data.meetings || [];
+                renderMeetings(meetings);
+            } catch (error) {
+                document.getElementById('meetings-list').innerHTML = `
+                    <div class="error-message">
+                        Failed to load meetings. Please try again.
+                    </div>
+                `;
+            }
+        }
+
+        // Refresh meetings
+        function refreshMeetings() {
+            document.getElementById('meetings-list').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            `;
+            fetchMeetings();
+        }
+
+        // Initialize
+        fetchMeetings();
+
+        // Auto-refresh every 30 seconds
+        setInterval(fetchMeetings, 30000);
+    </script>
+</body>
+</html>
