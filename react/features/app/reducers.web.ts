@@ -19,5 +19,6 @@ import '../talk-while-muted/reducer';
 import '../virtual-background/reducer';
 import '../web-hid/reducer';
 import '../file-sharing/reducer';
+import '../meeting-intelligence/reducer';
 
 import './reducers.any';

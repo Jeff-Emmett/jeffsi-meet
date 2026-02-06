@@ -22,6 +22,7 @@ import CalleeInfoContainer from '../../../invite/components/callee-info/CalleeIn
 import LargeVideo from '../../../large-video/components/LargeVideo.web';
 import LobbyScreen from '../../../lobby/components/web/LobbyScreen';
 import { getIsLobbyVisible } from '../../../lobby/functions';
+import { MeetingIntelligenceDashboard } from '../../../meeting-intelligence/components';
 import { getOverlayToRender } from '../../../overlay/functions.web';
 import ParticipantsPane from '../../../participants-pane/components/web/ParticipantsPane';
 import Prejoin from '../../../prejoin/components/web/Prejoin';
@@ -323,6 +324,7 @@ class Conference extends AbstractConference<IProps, any> {
                     { _showVisitorsQueue && <VisitorsQueue />}
                 </div>
                 <ParticipantsPane />
+                <MeetingIntelligenceDashboard />
                 <ReactionAnimations />
             </div>
         );

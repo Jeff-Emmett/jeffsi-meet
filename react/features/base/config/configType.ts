@@ -478,6 +478,13 @@ export interface IConfig {
     logging?: ILoggingConfig;
     mainToolbarButtons?: Array<Array<string>>;
     maxFullResolutionParticipants?: number;
+    meetingIntelligence?: {
+        apiUrl?: string;
+        autoTranscribe?: boolean;
+        enabled?: boolean;
+        exportFormats?: Array<'pdf' | 'markdown' | 'json'>;
+        standalonePageEnabled?: boolean;
+    };
     microsoftApiApplicationClientID?: string;
     moderatedRoomServiceUrl?: string;
     mouseMoveCallbackInterval?: number;

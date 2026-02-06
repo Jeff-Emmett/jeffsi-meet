@@ -24,6 +24,7 @@ import { isGifEnabled } from '../gifs/function.any';
 import InviteButton from '../invite/components/add-people-dialog/web/InviteButton';
 import { registerShortcut, unregisterShortcut } from '../keyboard-shortcuts/actions';
 import { useKeyboardShortcutsButton } from '../keyboard-shortcuts/hooks';
+import { useMeetingIntelligenceButton } from '../meeting-intelligence/hooks';
 import NoiseSuppressionButton from '../noise-suppression/components/NoiseSuppressionButton';
 import {
     close as closeParticipantsPane,
@@ -285,6 +286,7 @@ export function useToolboxButtons(
     const shareaudio = getShareAudioButton();
     const shareVideo = useSharedVideoButton();
     const shareMusic = useSharedMusicButton();
+    const meetingIntelligence = useMeetingIntelligenceButton();
     const whiteboard = useWhiteboardButton();
     const etherpad = useEtherpadButton();
     const virtualBackground = useVirtualBackgroundButton();
@@ -318,6 +320,7 @@ export function useToolboxButtons(
         linktosalesforce,
         sharedvideo: shareVideo,
         sharedmusic: shareMusic,
+        meetingintelligence: meetingIntelligence,
         shareaudio,
         noisesuppression: noiseSuppression,
         whiteboard,

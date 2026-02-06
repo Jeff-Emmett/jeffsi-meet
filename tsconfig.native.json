@@ -36,6 +36,7 @@
         "react/features/virtual-background",
         "react/features/web-hid",
         "react/features/whiteboard",
+        "react/features/meeting-intelligence",
         "**/web/*",
         "**/*.web.ts",
         "**/*.web.tsx"
