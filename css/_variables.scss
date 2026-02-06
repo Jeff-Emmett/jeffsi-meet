@@ -57,31 +57,33 @@ $unsupportedDesktopBrowserTextFontSize: 1.25rem;
 
 /**
  * The size of the default watermark.
+ * Jeffsi Meet - Larger logo
  */
-$watermarkWidth: 71px;
-$watermarkHeight: 32px;
+$watermarkWidth: 140px;
+$watermarkHeight: 40px;
 
-$welcomePageWatermarkWidth: 71px;
-$welcomePageWatermarkHeight: 32px;
+$welcomePageWatermarkWidth: 140px;
+$welcomePageWatermarkHeight: 40px;
 
 /**
  * Welcome page variables.
+ * Jeffsi Meet - Purple gradient theme
  */
 $welcomePageDescriptionColor: #fff;
 $welcomePageFontFamily: inherit;
 $welcomePageBackground: none;
 $welcomePageTitleColor: #fff;
 
-$welcomePageHeaderBackground: linear-gradient(0deg, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)), url('../images/welcome-background.png');
+$welcomePageHeaderBackground: linear-gradient(135deg, #0f0a1a 0%, #1e1040 25%, #2d1b4e 50%, #1a1035 75%, #0f0a1a 100%);
 $welcomePageHeaderBackgroundPosition: center;
-$welcomePageHeaderBackgroundRepeat: none;
+$welcomePageHeaderBackgroundRepeat: no-repeat;
 $welcomePageHeaderBackgroundSize: cover;
 $welcomePageHeaderPadding: 1rem;
 $welcomePageHeaderTitleMaxWidth: initial;
 $welcomePageHeaderTextAlign: center;
-$welcomePageButtonBg: #0074E0;
-$welcomePageButtonHoverBg: #4687ED;
-$welcomePageButtonFocusOutline: #00225A;
+$welcomePageButtonBg: #8b5cf6;
+$welcomePageButtonHoverBg: #a855f7;
+$welcomePageButtonFocusOutline: #6366f1;
 
 $welcomePageHeaderContainerMarginTop: 104px;
 $welcomePageHeaderContainerDisplay: flex;
