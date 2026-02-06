@@ -2,6 +2,7 @@
 Database operations for the Meeting Intelligence API.
 """
 
+import json
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -109,9 +110,9 @@ class Database:
                     id, conference_id, conference_name, title,
                     recording_path, started_at, status, metadata
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, 'recording', $7)
+                VALUES ($1, $2, $3, $4, $5, $6, 'recording', $7::jsonb)
             """, meeting_id, conference_id, conference_name, title,
-               recording_path, started_at or datetime.utcnow(), metadata or {})
+               recording_path, started_at or datetime.utcnow(), json.dumps(metadata or {}))
 
         return meeting_id
 
@@ -326,12 +327,13 @@ class Database:
         payload: dict
     ) -> int:
         """Save a webhook event for processing."""
+        import json
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("""
                 INSERT INTO webhook_events (event_type, payload)
-                VALUES ($1, $2)
+                VALUES ($1, $2::jsonb)
                 RETURNING id
-            """, event_type, payload)
+            """, event_type, json.dumps(payload))
 
             return row["id"]
 
@@ -348,8 +350,8 @@ class Database:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("""
                 INSERT INTO processing_jobs (meeting_id, job_type, priority, result)
-                VALUES ($1::uuid, $2, $3, $4)
+                VALUES ($1::uuid, $2, $3, $4::jsonb)
                 RETURNING id
-            """, meeting_id, job_type, priority, result or {})
+            """, meeting_id, job_type, priority, json.dumps(result or {}))
 
             return row["id"]

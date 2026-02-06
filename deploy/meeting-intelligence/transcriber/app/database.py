@@ -2,6 +2,7 @@
 Database operations for the Transcription Service.
 """
 
+import json
 import uuid
 from typing import Optional, List, Dict, Any
 
@@ -47,28 +48,28 @@ class Database:
         enable_diarization: bool = True,
         language: Optional[str] = None,
         priority: int = 5
-    ) -> str:
-        """Create a new transcription job."""
-        job_id = str(uuid.uuid4())
+    ) -> int:
+        """Create a new transcription job. Returns the auto-generated job ID."""
+        result_data = {
+            "audio_path": audio_path,
+            "video_path": video_path,
+            "enable_diarization": enable_diarization,
+            "language": language
+        }
 
         async with self.pool.acquire() as conn:
-            await conn.execute("""
+            job_id = await conn.fetchval("""
                 INSERT INTO processing_jobs (
-                    id, meeting_id, job_type, status, priority,
-                    result
+                    meeting_id, job_type, status, priority, result
                 )
-                VALUES ($1, $2::uuid, 'transcribe', 'pending', $3, $4)
-            """, job_id, meeting_id, priority, {
-                "audio_path": audio_path,
-                "video_path": video_path,
-                "enable_diarization": enable_diarization,
-                "language": language
-            })
+                VALUES ($1::uuid, 'transcribe', 'pending', $2, $3::jsonb)
+                RETURNING id
+            """, meeting_id, priority, json.dumps(result_data))
 
         log.info("Created transcription job", job_id=job_id, meeting_id=meeting_id)
         return job_id
 
-    async def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+    async def get_job(self, job_id: int) -> Optional[Dict[str, Any]]:
         """Get a job by ID."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("""
@@ -107,19 +108,30 @@ class Database:
                 result = dict(row)
                 # Merge result JSON into the dict
                 if result.get("result"):
-                    result.update(result["result"])
+                    if isinstance(result["result"], dict):
+                        result.update(result["result"])
+                    elif isinstance(result["result"], str):
+                        result.update(json.loads(result["result"]))
                 return result
             return None
 
     async def update_job_status(
         self,
-        job_id: str,
+        job_id: int,
         status: str,
         error_message: Optional[str] = None,
         result: Optional[dict] = None,
         progress: Optional[float] = None
     ):
         """Update job status."""
+        result_json = None
+        if result is not None:
+            if progress is not None:
+                result["progress"] = progress
+            result_json = json.dumps(result)
+        elif progress is not None:
+            result_json = json.dumps({"progress": progress})
+
         async with self.pool.acquire() as conn:
             if status == "completed":
                 await conn.execute("""
@@ -129,29 +141,24 @@ class Database:
                         error_message = $2,
                         result = COALESCE($3::jsonb, result)
                     WHERE id = $4
-                """, status, error_message, result, job_id)
+                """, status, error_message, result_json, job_id)
             else:
-                update_result = result
-                if progress is not None:
-                    update_result = result or {}
-                    update_result["progress"] = progress
-
                 await conn.execute("""
                     UPDATE processing_jobs
                     SET status = $1,
                         error_message = $2,
                         result = COALESCE($3::jsonb, result)
                     WHERE id = $4
-                """, status, error_message, update_result, job_id)
+                """, status, error_message, result_json, job_id)
 
-    async def update_job_audio_path(self, job_id: str, audio_path: str):
+    async def update_job_audio_path(self, job_id: int, audio_path: str):
         """Update the audio path for a job."""
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 UPDATE processing_jobs
                 SET result = result || $1::jsonb
                 WHERE id = $2
-            """, {"audio_path": audio_path}, job_id)
+            """, json.dumps({"audio_path": audio_path}), job_id)
 
     async def update_meeting_status(self, meeting_id: str, status: str):
         """Update meeting processing status."""
@@ -232,9 +239,9 @@ class Database:
                     id, conference_id, conference_name, title,
                     recording_path, status, metadata
                 )
-                VALUES ($1, $2, $3, $4, $5, 'recording', $6)
+                VALUES ($1::uuid, $2, $3, $4, $5, 'recording', $6::jsonb)
             """, meeting_id, conference_id, conference_name, title,
-               recording_path, metadata or {})
+               recording_path, json.dumps(metadata or {}))
 
         log.info("Created meeting", meeting_id=meeting_id, conference_id=conference_id)
         return meeting_id

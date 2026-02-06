@@ -4,7 +4,7 @@ Job Processor for the Transcription Service.
 Handles the processing pipeline:
 1. Audio extraction from video
 2. Transcription
-3. Speaker diarization
+3. Speaker diarization (optional, fails gracefully)
 4. Database storage
 """
 
@@ -76,7 +76,7 @@ class JobProcessor:
                     continue
 
                 job_id = job["id"]
-                meeting_id = job["meeting_id"]
+                meeting_id = str(job["meeting_id"])  # Convert UUID to string
 
                 log.info(
                     f"Worker {worker_id} processing job",
@@ -113,7 +113,7 @@ class JobProcessor:
     async def _process_job(self, job: dict):
         """Process a single transcription job."""
         job_id = job["id"]
-        meeting_id = job["meeting_id"]
+        meeting_id = str(job["meeting_id"])  # Ensure string
         audio_path = job.get("audio_path")
         video_path = job.get("video_path")
         enable_diarization = job.get("enable_diarization", True)
@@ -149,32 +149,39 @@ class JobProcessor:
             duration=transcription.duration
         )
 
-        # Step 3: Speaker diarization
+        # Step 3: Speaker diarization (optional, fails gracefully)
         speaker_segments = []
         if enable_diarization and len(transcription.segments) > 0:
             log.info("Starting speaker diarization")
             await self.db.update_job_status(job_id, "processing", progress=0.6)
             await self.db.update_meeting_status(meeting_id, "diarizing")
 
-            # Convert transcript segments to dicts for diarizer
-            transcript_dicts = [
-                {"start": s.start, "end": s.end, "text": s.text}
-                for s in transcription.segments
-            ]
+            try:
+                # Convert transcript segments to dicts for diarizer
+                transcript_dicts = [
+                    {"start": s.start, "end": s.end, "text": s.text}
+                    for s in transcription.segments
+                ]
 
-            speaker_segments = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: self.diarizer.diarize(
-                    audio_path,
-                    transcript_segments=transcript_dicts
+                speaker_segments = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self.diarizer.diarize(
+                        audio_path,
+                        transcript_segments=transcript_dicts
+                    )
                 )
-            )
 
-            log.info(
-                "Diarization complete",
-                num_segments=len(speaker_segments),
-                num_speakers=len(set(s.speaker_id for s in speaker_segments))
-            )
+                log.info(
+                    "Diarization complete",
+                    num_segments=len(speaker_segments),
+                    num_speakers=len(set(s.speaker_id for s in speaker_segments))
+                )
+            except Exception as e:
+                log.warning(
+                    "Diarization failed, continuing without speaker labels",
+                    error=str(e)
+                )
+                speaker_segments = []
 
         # Step 4: Store results
         log.info("Storing transcript in database")

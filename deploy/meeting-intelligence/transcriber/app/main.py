@@ -11,7 +11,7 @@ FastAPI service that handles:
 import asyncio
 import os
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse
@@ -33,20 +33,21 @@ log = structlog.get_logger()
 # Pydantic models
 class TranscribeRequest(BaseModel):
     meeting_id: str
-    audio_path: str
+    audio_path: Optional[str] = None
+    video_path: Optional[str] = None  # If provided, will extract audio first
     priority: int = 5
     enable_diarization: bool = True
     language: Optional[str] = None
 
 
 class TranscribeResponse(BaseModel):
-    job_id: str
+    job_id: int  # Integer from database auto-increment
     status: str
     message: str
 
 
 class JobStatus(BaseModel):
-    job_id: str
+    job_id: int
     status: str
     progress: Optional[float] = None
     result: Optional[dict] = None
@@ -172,24 +173,64 @@ async def service_status():
 @app.post("/transcribe", response_model=TranscribeResponse)
 async def queue_transcription(request: TranscribeRequest, background_tasks: BackgroundTasks):
     """Queue a transcription job."""
+    audio_path = request.audio_path
+    
+    # If video_path provided, extract audio first
+    if request.video_path and not audio_path:
+        log.info(
+            "Extracting audio from video",
+            meeting_id=request.meeting_id,
+            video_path=request.video_path
+        )
+        
+        if not os.path.exists(request.video_path):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Video file not found: {request.video_path}"
+            )
+        
+        # Extract audio using ffmpeg
+        import subprocess
+        audio_dir = os.environ.get("AUDIO_OUTPUT_DIR", "/audio")
+        os.makedirs(audio_dir, exist_ok=True)
+        audio_path = os.path.join(audio_dir, f"{request.meeting_id}.wav")
+        
+        try:
+            result = subprocess.run([
+                "ffmpeg", "-y", "-i", request.video_path,
+                "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+                audio_path
+            ], capture_output=True, text=True, timeout=300)
+            
+            if result.returncode != 0:
+                log.error("FFmpeg error", stderr=result.stderr)
+                raise HTTPException(status_code=500, detail=f"Audio extraction failed: {result.stderr}")
+                
+            log.info("Audio extracted", audio_path=audio_path)
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=500, detail="Audio extraction timed out")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Audio extraction failed: {str(e)}")
+    
     log.info(
         "Received transcription request",
         meeting_id=request.meeting_id,
-        audio_path=request.audio_path
+        audio_path=audio_path
     )
 
     # Validate audio file exists
-    if not os.path.exists(request.audio_path):
+    if not audio_path or not os.path.exists(audio_path):
         raise HTTPException(
             status_code=404,
-            detail=f"Audio file not found: {request.audio_path}"
+            detail=f"Audio file not found: {audio_path}"
         )
 
-    # Create job record in database
+    # Create job record in database - use the extracted audio_path
     try:
         job_id = await state.db.create_transcription_job(
             meeting_id=request.meeting_id,
-            audio_path=request.audio_path,
+            audio_path=audio_path,  # Use extracted audio_path, not request.audio_path
+            video_path=request.video_path,
             enable_diarization=request.enable_diarization,
             language=request.language,
             priority=request.priority
@@ -216,7 +257,7 @@ async def queue_transcription(request: TranscribeRequest, background_tasks: Back
 
 
 @app.get("/transcribe/{job_id}", response_model=JobStatus)
-async def get_job_status(job_id: str):
+async def get_job_status(job_id: int):
     """Get the status of a transcription job."""
     job = await state.db.get_job(job_id)
 
@@ -233,7 +274,7 @@ async def get_job_status(job_id: str):
 
 
 @app.delete("/transcribe/{job_id}")
-async def cancel_job(job_id: str):
+async def cancel_job(job_id: int):
     """Cancel a pending transcription job."""
     job = await state.db.get_job(job_id)
 
