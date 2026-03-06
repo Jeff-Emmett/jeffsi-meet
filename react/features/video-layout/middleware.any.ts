@@ -99,9 +99,13 @@ StateListenerRegistry.register(
     state => getCurrentConference(state),
     (conference, { dispatch }, previousConference) => {
         if (conference !== previousConference) {
-            // conference changed, left or failed...
-            // Clear tile view state.
-            dispatch(setTileView());
+            if (conference) {
+                // New conference joined - default to tile view.
+                dispatch(setTileView(true));
+            } else {
+                // Conference left or failed - clear tile view state.
+                dispatch(setTileView());
+            }
         }
     });
 

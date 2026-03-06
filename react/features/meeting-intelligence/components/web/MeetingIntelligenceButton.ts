@@ -24,7 +24,7 @@ class MeetingIntelligenceButton extends AbstractButton<IProps> {
     override icon = IconMeter;
     override label = 'toolbar.meetingIntelligence';
     override toggledLabel = 'toolbar.closeMeetingIntelligence';
-    override tooltip = 'toolbar.meetingIntelligence';
+    override tooltip = 'toolbar.meetingIntelligenceTooltip';
     override toggledTooltip = 'toolbar.closeMeetingIntelligence';
 
     /**

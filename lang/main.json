@@ -1504,6 +1504,7 @@
         "sharedmusic": "Share music",
         "stopSharedMusic": "Stop music",
         "meetingIntelligence": "Meeting Intelligence",
+        "meetingIntelligenceTooltip": "Recordings are transcribed by self-hosted AI post-recording",
         "closeMeetingIntelligence": "Close Meeting Intelligence",
         "shortcuts": "View shortcuts",
         "showWhiteboard": "Show whiteboard",
