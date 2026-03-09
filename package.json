@@ -19,6 +19,8 @@
     "@amplitude/analytics-browser": "2.17.12",
     "@amplitude/analytics-react-native": "1.4.13",
     "@braintree/sanitize-url": "7.0.0",
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
     "@emotion/react": "11.10.6",
     "@emotion/styled": "11.10.6",
     "@giphy/js-fetch-api": "4.9.3",

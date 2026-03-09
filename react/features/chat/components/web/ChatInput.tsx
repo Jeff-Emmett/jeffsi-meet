@@ -13,7 +13,7 @@ import Input from '../../../base/ui/components/web/Input';
 import { CHAT_SIZE } from '../../constants';
 import { areSmileysDisabled, isSendGroupChatDisabled } from '../../functions';
 
-import SmileysPanel from './SmileysPanel';
+import EmojiPicker from './EmojiPicker';
 
 
 const styles = (_theme: Theme, { _chatWidth }: IProps) => {
@@ -23,18 +23,14 @@ const styles = (_theme: Theme, { _chatWidth }: IProps) => {
             boxSizing: 'border-box' as const,
             backgroundColor: 'rgba(0, 0, 0, .6) !important',
             height: 'auto',
+            maxHeight: '435px',
             display: 'flex' as const,
             overflow: 'hidden',
             position: 'absolute' as const,
             width: `${_chatWidth - 32}px`,
             marginBottom: '5px',
             marginLeft: '-5px',
-            transition: 'max-height 0.3s',
-
-            '& #smileysContainer': {
-                backgroundColor: '#131519',
-                borderTop: '1px solid #A4B8D1'
-            }
+            borderRadius: '10px'
         },
         chatDisabled: {
             borderTop: `1px solid ${_theme.palette.ui02}`,
@@ -183,8 +179,8 @@ class ChatInput extends Component<IProps, IState> {
                             className = 'smiley-input'>
                             <div
                                 className = { classes.smileysPanel } >
-                                <SmileysPanel
-                                    onSmileySelect = { this._onSmileySelect } />
+                                <EmojiPicker
+                                    onEmojiSelect = { this._onSmileySelect } />
                             </div>
                         </div>
                     )}

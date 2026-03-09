@@ -79,7 +79,7 @@ class ReactionEmoji extends Component<IProps, IState> {
             <div
                 className = { `reaction-emoji reaction-${index}` }
                 id = { uid }>
-                { REACTIONS[reaction].emoji }
+                { REACTIONS[reaction]?.emoji ?? reaction }
             </div>
         );
     }

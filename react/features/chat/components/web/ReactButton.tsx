@@ -10,6 +10,7 @@ import Button from '../../../base/ui/components/web/Button';
 import { BUTTON_TYPES } from '../../../base/ui/constants.any';
 import { sendReaction } from '../../actions.any';
 
+import EmojiPicker from './EmojiPicker';
 import EmojiSelector from './EmojiSelector';
 
 interface IProps {
@@ -40,18 +41,21 @@ const ReactButton = ({ messageId, receiverId }: IProps) => {
     const dispatch = useDispatch();
     const { t } = useTranslation();
 
-    const onSendReaction = useCallback(emoji => {
+    const onSendReaction = useCallback((emoji: string) => {
         dispatch(sendReaction(emoji, messageId, receiverId));
     }, [ dispatch, messageId, receiverId ]);
 
     const [ isPopoverOpen, setIsPopoverOpen ] = useState(false);
+    const [ showFullPicker, setShowFullPicker ] = useState(false);
 
     const handleReactClick = useCallback(() => {
         setIsPopoverOpen(true);
+        setShowFullPicker(false);
     }, []);
 
     const handleClose = useCallback(() => {
         setIsPopoverOpen(false);
+        setShowFullPicker(false);
     }, []);
 
     const handleEmojiSelect = useCallback((emoji: string) => {
@@ -59,9 +63,18 @@ const ReactButton = ({ messageId, receiverId }: IProps) => {
         handleClose();
     }, [ onSendReaction, handleClose ]);
 
+    const handleExpand = useCallback(() => {
+        setShowFullPicker(true);
+    }, []);
+
     const popoverContent = (
         <div className = { classes.popoverContent }>
-            <EmojiSelector onSelect = { handleEmojiSelect } />
+            {showFullPicker
+                ? <EmojiPicker onEmojiSelect = { handleEmojiSelect } />
+                : <EmojiSelector
+                    onExpand = { handleExpand }
+                    onSelect = { handleEmojiSelect } />
+            }
         </div>
     );
 

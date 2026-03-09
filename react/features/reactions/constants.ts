@@ -128,9 +128,9 @@ interface IReactions {
     [key: string]: {
         emoji: string;
         message: string;
-        shortcutChar: string;
-        soundFiles: string[];
-        soundId: string;
+        shortcutChar?: string;
+        soundFiles?: string[];
+        soundId?: string;
     };
 }
 
@@ -183,6 +183,38 @@ export const REACTIONS: IReactions = {
         shortcutChar: 'H',
         soundId: HEART_SOUND_ID,
         soundFiles: HEART_SOUND_FILES
+    },
+    party: {
+        message: ':party:',
+        emoji: '🎉'
+    },
+    thinking: {
+        message: ':thinking:',
+        emoji: '🤔'
+    },
+    wave: {
+        message: ':wave:',
+        emoji: '👋'
+    },
+    cry: {
+        message: ':cry:',
+        emoji: '😢'
+    },
+    eyes: {
+        message: ':eyes:',
+        emoji: '👀'
+    },
+    mindblown: {
+        message: ':mindblown:',
+        emoji: '🤯'
+    },
+    pray: {
+        message: ':pray:',
+        emoji: '🙏'
+    },
+    rocket: {
+        message: ':rocket:',
+        emoji: '🚀'
     }
 };
 

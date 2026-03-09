@@ -590,21 +590,23 @@ export const useKeyboardShortcuts = (toolbarButtons: Array<string>) => {
 
         // If the buttons for sending reactions are not displayed we should disable the shortcuts too.
         if (_shouldDisplayReactionsButtons) {
-            const REACTION_SHORTCUTS = Object.keys(REACTIONS).map(key => {
-                const onShortcutSendReaction = () => {
-                    dispatch(addReactionToBuffer(key));
-                    sendAnalytics(createShortcutEvent(
-                        `reaction.${key}`
-                    ));
-                };
+            const REACTION_SHORTCUTS = Object.keys(REACTIONS)
+                .filter(key => REACTIONS[key].shortcutChar)
+                .map(key => {
+                    const onShortcutSendReaction = () => {
+                        dispatch(addReactionToBuffer(key));
+                        sendAnalytics(createShortcutEvent(
+                            `reaction.${key}`
+                        ));
+                    };
 
-                return {
-                    character: REACTIONS[key].shortcutChar,
-                    exec: onShortcutSendReaction,
-                    helpDescription: `toolbar.reaction${key.charAt(0).toUpperCase()}${key.slice(1)}`,
-                    altKey: true
-                };
-            });
+                    return {
+                        character: REACTIONS[key].shortcutChar!,
+                        exec: onShortcutSendReaction,
+                        helpDescription: `toolbar.reaction${key.charAt(0).toUpperCase()}${key.slice(1)}`,
+                        altKey: true
+                    };
+                });
 
             REACTION_SHORTCUTS.forEach(shortcut => {
                 dispatch(registerShortcut({
@@ -636,7 +638,9 @@ export const useKeyboardShortcuts = (toolbarButtons: Array<string>) => {
                 dispatch(unregisterShortcut(letter)));
 
             if (_shouldDisplayReactionsButtons) {
-                Object.keys(REACTIONS).map(key => REACTIONS[key].shortcutChar)
+                Object.keys(REACTIONS)
+                    .filter(key => REACTIONS[key].shortcutChar)
+                    .map(key => REACTIONS[key].shortcutChar!)
                     .forEach(letter =>
                         dispatch(unregisterShortcut(letter, true)));
             }

@@ -27,7 +27,10 @@ export function getReactionsQueue(state: IReduxState): Array<IReactionEmojiProps
  * @returns {string}
  */
 export function getReactionMessageFromBuffer(buffer: Array<string>): string {
-    return buffer.map<string>(reaction => REACTIONS[reaction].message).reduce((acc, val) => `${acc}${val}`);
+    return buffer
+        .filter(reaction => REACTIONS[reaction]?.message)
+        .map<string>(reaction => REACTIONS[reaction].message)
+        .reduce((acc, val) => `${acc}${val}`, '');
 }
 
 /**
@@ -139,12 +142,14 @@ function getSoundThresholdByFrequency(frequency: number): number {
 export function getReactionsSoundsThresholds(reactions: Array<string>): Array<ReactionThreshold> {
     const unique = getUniqueReactions(reactions);
 
-    return unique.map<ReactionThreshold>(reaction => {
-        return {
-            reaction,
-            threshold: getSoundThresholdByFrequency(getReactionFrequency(reactions, reaction))
-        };
-    });
+    return unique
+        .filter(reaction => REACTIONS[reaction]?.soundId)
+        .map<ReactionThreshold>(reaction => {
+            return {
+                reaction,
+                threshold: getSoundThresholdByFrequency(getReactionFrequency(reactions, reaction))
+            };
+        });
 }
 
 /**

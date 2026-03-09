@@ -3,6 +3,7 @@ import React, { useCallback } from 'react';
 import { makeStyles } from 'tss-react/mui';
 
 interface IProps {
+    onExpand?: () => void;
     onSelect: (emoji: string) => void;
 }
 
@@ -19,11 +20,25 @@ const useStyles = makeStyles()((theme: Theme) => {
             cursor: 'pointer',
             padding: '5px',
             fontSize: '1.5em'
+        },
+
+        expandButton: {
+            cursor: 'pointer',
+            padding: '5px',
+            fontSize: '1.2em',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: 0.7,
+
+            '&:hover': {
+                opacity: 1
+            }
         }
     };
 });
 
-const EmojiSelector: React.FC<IProps> = ({ onSelect }) => {
+const EmojiSelector: React.FC<IProps> = ({ onSelect, onExpand }) => {
     const { classes } = useStyles();
 
     const emojiMap: Record<string, string> = {
@@ -31,7 +46,10 @@ const EmojiSelector: React.FC<IProps> = ({ onSelect }) => {
         redHeart: '❤️',
         faceWithTearsOfJoy: '😂',
         faceWithOpenMouth: '😮',
-        fire: '🔥'
+        fire: '🔥',
+        clap: '👏',
+        party: '🎉',
+        thinking: '🤔'
     };
     const emojiNames = Object.keys(emojiMap);
 
@@ -41,6 +59,14 @@ const EmojiSelector: React.FC<IProps> = ({ onSelect }) => {
             onSelect(emoji);
         },
         [ onSelect ]
+    );
+
+    const handleExpand = useCallback(
+        (event: React.MouseEvent<HTMLSpanElement>) => {
+            event.preventDefault();
+            onExpand?.();
+        },
+        [ onExpand ]
     );
 
     return (
@@ -53,6 +79,13 @@ const EmojiSelector: React.FC<IProps> = ({ onSelect }) => {
                     {emojiMap[name]}
                 </span>
             ))}
+            {onExpand && (
+                <span
+                    className = { classes.expandButton }
+                    onClick = { handleExpand }>
+                    +
+                </span>
+            )}
         </div>
     );
 };

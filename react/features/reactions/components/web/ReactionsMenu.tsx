@@ -143,6 +143,11 @@ const _getReactionButtons = (dispatch: IStore['dispatch'], t: Function) => {
             sendAnalytics(createReactionMenuEvent(key));
         }
 
+        const { shortcutChar } = REACTIONS[key];
+        const tooltip = shortcutChar
+            ? `${t(`toolbar.${key}`)} (${modifierKey} + ${shortcutChar})`
+            : t(`toolbar.${key}`);
+
         return (<ReactionButton
             accessibilityLabel = { t(`toolbar.accessibilityLabel.${key}`) }
             icon = { REACTIONS[key].emoji }
@@ -150,7 +155,7 @@ const _getReactionButtons = (dispatch: IStore['dispatch'], t: Function) => {
             // eslint-disable-next-line react/jsx-no-bind
             onClick = { doSendReaction }
             toggled = { false }
-            tooltip = { `${t(`toolbar.${key}`)} (${modifierKey} + ${REACTIONS[key].shortcutChar})` } />);
+            tooltip = { tooltip } />);
     });
 };
 
