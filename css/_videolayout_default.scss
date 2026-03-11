@@ -25,20 +25,7 @@
 
 #largeVideoBackgroundContainer,
 .large-video-background {
-    height: 100%;
-    left: 0;
-    overflow: hidden;
-    position: absolute;
-    top: 0;
-    width: 100%;
-
-    #largeVideoBackground {
-        min-height: 100%;
-        min-width: 100%;
-    }
-}
-#largeVideoBackgroundContainer {
-    filter: blur(40px);
+    display: none;
 }
 
 .videocontainer {
@@ -121,6 +108,14 @@
 #largeVideo,
 #largeVideoWrapper
 {
+    object-fit: cover;
+    width: 100% !important;
+    height: 100% !important;
+    top: 0 !important;
+    left: 0 !important;
+}
+
+#largeVideo {
     object-fit: cover;
 }
 

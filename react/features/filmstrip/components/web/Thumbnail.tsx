@@ -665,18 +665,11 @@ class Thumbnail extends Component<IProps, IState> {
             _isHidden,
             _isScreenSharing,
             _participant,
-            _thumbnailType,
             _videoObjectPosition,
-            _videoTrack,
             _width,
             horizontalOffset,
             style
         } = this.props;
-
-        const isTileType = _thumbnailType === THUMBNAIL_TYPE.TILE;
-        const jitsiVideoTrack = _videoTrack?.jitsiTrack;
-        const track = jitsiVideoTrack?.track;
-        const isPortraitVideo = (track?.getSettings()?.aspectRatio || 1) < 1;
 
         let styles: {
             avatar: Object;
@@ -696,8 +689,7 @@ class Thumbnail extends Component<IProps, IState> {
         }
 
         let videoStyles: any = null;
-        const doNotStretchVideo = (isPortraitVideo && isTileType)
-            || _disableTileEnlargement
+        const doNotStretchVideo = _disableTileEnlargement
             || _isScreenSharing;
 
         if (canPlayEventReceived || _participant.local || _isVirtualScreenshareParticipant) {
