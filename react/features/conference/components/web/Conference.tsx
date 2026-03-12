@@ -184,6 +184,13 @@ class Conference extends AbstractConference<IProps, any> {
     override componentDidMount() {
         document.title = `${this.props._roomName} | ${interfaceConfig.APP_NAME}`;
         this._start();
+
+        // On mobile browsers, show the toolbox immediately since there is no
+        // mouse-move event to trigger it.  The mobile timeout handler is a
+        // no-op so the toolbox stays visible until the user taps to hide it.
+        if (isMobileBrowser()) {
+            this.props.dispatch(showToolbox());
+        }
     }
 
     /**
