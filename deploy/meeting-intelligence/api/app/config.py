@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # Ollama (for AI summaries)
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
+    ollama_timeout: int = 600  # seconds (up from hardcoded 120)
+
+    # AI Orchestrator (optional GPU fallback via RunPod)
+    ai_orchestrator_url: str = ""  # empty = disabled, e.g. "http://ai-orchestrator:8080"
+    ai_orchestrator_priority: str = "normal"  # low|normal|high
 
     # File paths
     recordings_path: str = "/recordings"
