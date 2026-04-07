@@ -8,10 +8,18 @@ import { FakeParticipant } from '../../../base/participants/types';
 import { getVerticalViewMaxWidth } from '../../../filmstrip/functions.web';
 import { getLargeVideoParticipant } from '../../../large-video/functions';
 import { getToolboxHeight } from '../../../toolbox/functions.web';
-import { isSharedVideoEnabled, isVideoPlaying } from '../../functions';
+import { VIDEO_SOURCE_TYPES } from '../../constants';
+import { getVideoSourceType, isSharedVideoEnabled, isVideoPlaying } from '../../functions';
 
+import EmbedVideoManager from './EmbedVideoManager';
 import VideoManager from './VideoManager';
 import YoutubeVideoManager from './YoutubeVideoManager';
+
+const EMBED_VIDEO_TYPES = [
+    VIDEO_SOURCE_TYPES.VIMEO,
+    VIDEO_SOURCE_TYPES.DAILYMOTION,
+    VIDEO_SOURCE_TYPES.TWITCH
+];
 
 interface IProps {
 
@@ -116,11 +124,21 @@ class SharedVideo extends Component<IProps> {
             return null;
         }
 
-        if (videoUrl.match(/http/)) {
-            return <VideoManager videoId = { videoUrl } />;
+        const sourceType = getVideoSourceType(videoUrl);
+
+        if (sourceType === VIDEO_SOURCE_TYPES.YOUTUBE) {
+            return <YoutubeVideoManager videoId = { videoUrl } />;
         }
 
-        return <YoutubeVideoManager videoId = { videoUrl } />;
+        if (EMBED_VIDEO_TYPES.includes(sourceType as any)) {
+            return (<EmbedVideoManager
+                // @ts-ignore
+                sourceType = { sourceType }
+                // @ts-ignore
+                videoId = { videoUrl } />);
+        }
+
+        return <VideoManager videoId = { videoUrl } />;
     }
 
     /**

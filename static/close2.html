@@ -5,11 +5,34 @@
     <!--#include virtual="/title.html" -->
     <script><!--#include virtual="/interface_config.js" --></script>
     <script src="static/close.js"></script>
+    <style>
+        .meeting-intelligence-link {
+            display: flex;
+            justify-content: center;
+            margin-top: 24px;
+        }
+        .meeting-intelligence-link a {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 500;
+            padding: 12px 24px;
+            text-decoration: none;
+            transition: opacity 0.2s;
+        }
+        .meeting-intelligence-link a:hover {
+            opacity: 0.9;
+        }
+    </style>
 </head>
 <body>
     <div class="redirectPageMessage">
         <div class="thanks-msg">
             <p id="thanksMessage"></p>
+        </div>
+        <div class="meeting-intelligence-link">
+            <a href="/" id="miLink" onclick="openDashboard(event)">View Meeting Recordings &amp; Transcripts</a>
         </div>
         <div class="hint-msg">
             <p>
@@ -19,5 +42,11 @@
             <div class="happy-software"></div>
         </div>
     </div>
+    <script>
+        function openDashboard(e) {
+            e.preventDefault();
+            window.location.href = '/';
+        }
+    </script>
 </body>
 </html>
