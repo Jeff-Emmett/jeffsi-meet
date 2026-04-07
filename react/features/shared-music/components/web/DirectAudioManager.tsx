@@ -179,7 +179,7 @@ class DirectAudioManager extends AbstractMusicManager {
         let options: any = {
             autoPlay: true,
             src: musicId,
-            controls: _isOwner,
+            controls: true,
             onError: () => this.onError(),
             onPlay: () => this.onPlay(),
             onVolumeChange: () => this.onVolumeChange()
@@ -204,9 +204,9 @@ class DirectAudioManager extends AbstractMusicManager {
     override render() {
         return (
             <audio
-                className = 'hide'
                 id = 'sharedMusicPlayer'
                 ref = { this.audioRef }
+                style = {{ width: '100%' }}
                 { ...this.getPlayerOptions() } />
         );
     }

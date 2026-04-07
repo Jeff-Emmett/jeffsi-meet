@@ -189,8 +189,8 @@ class YoutubeVideoManager extends AbstractVideoManager {
     };
 
     getPlayerOptions = () => {
-        const { _isOwner, videoId } = this.props;
-        const showControls = _isOwner ? 1 : 0;
+        const { videoId } = this.props;
+        const showControls = 1;
 
         const options = {
             id: 'sharedVideoPlayer',

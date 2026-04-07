@@ -188,8 +188,8 @@ class YouTubeMusicManager extends AbstractMusicManager {
      * @returns {Object}
      */
     getPlayerOptions = () => {
-        const { _isOwner, musicId } = this.props;
-        const showControls = _isOwner ? 1 : 0;
+        const { musicId } = this.props;
+        const showControls = 1;
 
         const options = {
             id: 'sharedMusicPlayer',

@@ -148,7 +148,7 @@ class VideoManager extends AbstractVideoManager {
         let options: any = {
             autoPlay: true,
             src: videoId,
-            controls: _isOwner,
+            controls: true,
             onError: () => this.onError(),
             onPlay: () => this.onPlay(),
             onVolumeChange: () => this.onVolumeChange()
