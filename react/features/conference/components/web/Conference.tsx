@@ -32,6 +32,7 @@ import { toggleToolboxVisible } from '../../../toolbox/actions.any';
 import { fullScreenChanged, showToolbox } from '../../../toolbox/actions.web';
 import JitsiPortal from '../../../toolbox/components/web/JitsiPortal';
 import Toolbox from '../../../toolbox/components/web/Toolbox';
+import { toggleTileView } from '../../../video-layout/actions.any';
 import { LAYOUT_CLASSNAMES } from '../../../video-layout/constants';
 import { getCurrentLayout } from '../../../video-layout/functions.any';
 import VisitorsQueue from '../../../visitors/components/web/VisitorsQueue';
@@ -137,6 +138,9 @@ function shouldShowPrejoin({ _showLobby, _showPrejoin, _showVisitorsQueue }: IPr
 class Conference extends AbstractConference<IProps, any> {
     _originalOnMouseMove: Function;
     _originalOnShowToolbar: Function;
+    _touchStartX = 0;
+    _touchStartY = 0;
+    _touchStartTime = 0;
 
     /**
      * Initializes a new Conference instance.
@@ -173,6 +177,7 @@ class Conference extends AbstractConference<IProps, any> {
         // Bind event handler so it is only bound once for every instance.
         this._onFullScreenChange = this._onFullScreenChange.bind(this);
         this._onVideospaceTouchStart = this._onVideospaceTouchStart.bind(this);
+        this._onVideospaceTouchEnd = this._onVideospaceTouchEnd.bind(this);
         this._setBackground = this._setBackground.bind(this);
     }
 
@@ -263,6 +268,7 @@ class Conference extends AbstractConference<IProps, any> {
                         <Notice />
                         <div
                             id = 'videospace'
+                            onTouchEnd = { this._onVideospaceTouchEnd }
                             onTouchStart = { this._onVideospaceTouchStart }>
                             <LargeVideo />
                         </div>
@@ -294,6 +300,7 @@ class Conference extends AbstractConference<IProps, any> {
                     <Notice />
                     <div
                         id = 'videospace'
+                        onTouchEnd = { this._onVideospaceTouchEnd }
                         onTouchStart = { this._onVideospaceTouchStart }>
                         <LargeVideo />
                         {
@@ -303,6 +310,20 @@ class Conference extends AbstractConference<IProps, any> {
                                 <MainFilmstrip />
                             </>)
                         }
+                        { isMobileBrowser() && (
+                            <div className = 'layout-indicator'>
+                                <div
+                                    className = { `layout-indicator-dot ${
+                                        this.props._shouldDisplayTileView
+                                            ? 'layout-indicator-dot--inactive'
+                                            : 'layout-indicator-dot--active'}` } />
+                                <div
+                                    className = { `layout-indicator-dot ${
+                                        this.props._shouldDisplayTileView
+                                            ? 'layout-indicator-dot--active'
+                                            : 'layout-indicator-dot--inactive'}` } />
+                            </div>
+                        )}
                     </div>
 
                     { _showPrejoin || _showLobby || (
@@ -368,12 +389,50 @@ class Conference extends AbstractConference<IProps, any> {
 
     /**
      * Handler used for touch start on Video container.
+     * Records touch coordinates for swipe detection on mobile.
      *
+     * @param {TouchEvent} event - The touch event.
      * @private
      * @returns {void}
      */
-    _onVideospaceTouchStart() {
-        this.props.dispatch(toggleToolboxVisible());
+    _onVideospaceTouchStart(event: React.TouchEvent) {
+        if (event.touches.length === 1) {
+            this._touchStartX = event.touches[0].clientX;
+            this._touchStartY = event.touches[0].clientY;
+            this._touchStartTime = Date.now();
+        }
+    }
+
+    /**
+     * Handler used for touch end on Video container.
+     * Detects horizontal swipe to toggle tile view, or short tap to toggle toolbox.
+     *
+     * @param {TouchEvent} event - The touch event.
+     * @private
+     * @returns {void}
+     */
+    _onVideospaceTouchEnd(event: React.TouchEvent) {
+        if (event.changedTouches.length !== 1) {
+            return;
+        }
+
+        const dx = event.changedTouches[0].clientX - this._touchStartX;
+        const dy = event.changedTouches[0].clientY - this._touchStartY;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        const elapsed = Date.now() - this._touchStartTime;
+
+        // Horizontal swipe: >=60px horizontal, more horizontal than vertical, within 500ms.
+        if (absDx >= 60 && absDx > absDy * 1.5 && elapsed < 500) {
+            this.props.dispatch(toggleTileView());
+
+            return;
+        }
+
+        // Short tap: <300ms, <10px movement.
+        if (elapsed < 300 && absDx < 10 && absDy < 10) {
+            this.props.dispatch(toggleToolboxVisible());
+        }
     }
 
     /**
