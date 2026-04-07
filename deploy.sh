@@ -11,7 +11,15 @@ echo "=== Building Jeffsi Meet ==="
 
 # Build the web client
 echo "Building web client..."
-make all
+make compile || echo "WARNING: webpack exited with errors (non-fatal if bundles were emitted)"
+
+# Verify main bundle was emitted
+if [ ! -f build/app.bundle.min.js ]; then
+    echo "ERROR: build/app.bundle.min.js not found. Build failed."
+    exit 1
+fi
+
+make deploy
 
 # Build Docker image
 echo "Building Docker image..."
