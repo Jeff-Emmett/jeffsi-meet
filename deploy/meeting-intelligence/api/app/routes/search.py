@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, Query
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
+from ..auth import get_multi_tokens
 from ..config import settings
 
 import structlog
@@ -58,12 +59,21 @@ class SearchRequest(BaseModel):
 async def search_transcripts(request: Request, body: SearchRequest):
     """Search across meeting transcripts.
 
+    Requires X-MI-Tokens header. Results are filtered to authorized meetings only.
+
     Search types:
     - text: Full-text search using PostgreSQL ts_vector
     - semantic: Semantic search using vector embeddings
     - combined: Both text and semantic search, merged results
     """
     db = request.app.state.db
+
+    # Get authorized meeting IDs from tokens
+    tokens = get_multi_tokens(request)
+    authorized_meetings = set()
+    if tokens:
+        meetings = await db.list_meetings_by_tokens(tokens=tokens, limit=1000)
+        authorized_meetings = {str(m["id"]) for m in meetings}
 
     if not body.query or len(body.query.strip()) < 2:
         raise HTTPException(
@@ -123,6 +133,12 @@ async def search_transcripts(request: Request, body: SearchRequest):
                     status_code=500,
                     detail=f"Semantic search failed: {str(e)}"
                 )
+
+    # Filter to authorized meetings only
+    if authorized_meetings:
+        results = [r for r in results if r.meeting_id in authorized_meetings]
+    else:
+        results = []
 
     # Deduplicate and sort by score
     seen = set()

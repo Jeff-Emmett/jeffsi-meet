@@ -14,6 +14,8 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ..auth import validate_meeting_access
+
 import structlog
 
 log = structlog.get_logger()
@@ -35,7 +37,9 @@ async def export_meeting(
     include_transcript: bool = True,
     include_summary: bool = True
 ):
-    """Export meeting data in various formats."""
+    """Export meeting data in various formats. Requires Bearer token."""
+    await validate_meeting_access(request, meeting_id)
+
     db = request.app.state.db
 
     # Get meeting data

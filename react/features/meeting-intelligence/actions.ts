@@ -2,7 +2,7 @@
  * Action creators for Meeting Intelligence feature.
  */
 
-import { IStore } from '../app/types';
+import { IReduxState, IStore } from '../app/types';
 
 import {
     CLEAR_SEARCH,
@@ -34,6 +34,7 @@ import {
     UPDATE_MEETING_STATUS
 } from './actionTypes';
 import { API_BASE_URL } from './constants';
+import { getAllTokens, getTokenForConference, storeToken } from './tokenStorage';
 import {
     IMeeting,
     IMeetingSummary,
@@ -41,6 +42,43 @@ import {
     ISpeakerStats,
     ITranscriptSegment
 } from './types';
+
+/**
+ * Get a Bearer auth header for a meeting, looked up by conference_id from state.
+ *
+ * @param {Function} getState - Redux getState function.
+ * @param {string} meetingId - Optional meeting ID to look up conference_id.
+ * @returns {Record<string, string>} Headers object with Authorization if token found.
+ */
+function _getBearerHeaders(getState: () => IReduxState, meetingId?: string): Record<string, string> {
+    const state = getState();
+    const miState = state['features/meeting-intelligence'];
+    let conferenceId: string | undefined;
+
+    // Try to find conference_id from selected meeting or provided meetingId
+    if (miState?.selectedMeeting) {
+        conferenceId = miState.selectedMeeting.conference_id;
+    } else if (meetingId && miState?.meetings) {
+        const meeting = miState.meetings.find((m: IMeeting) => m.id === meetingId);
+
+        conferenceId = meeting?.conference_id;
+    }
+
+    // Fall back to current conference room name
+    if (!conferenceId) {
+        conferenceId = state['features/base/conference']?.room;
+    }
+
+    if (conferenceId) {
+        const token = getTokenForConference(conferenceId);
+
+        if (token) {
+            return { Authorization: `Bearer ${token}` };
+        }
+    }
+
+    return {};
+}
 
 /**
  * Toggle the meeting intelligence dashboard.
@@ -95,6 +133,37 @@ export function clearSelectedMeeting() {
 }
 
 /**
+ * Fetch access tokens for a conference_id and store them locally.
+ *
+ * @param {string} conferenceId - The room name.
+ * @returns {Function} Async thunk action.
+ */
+export function fetchMeetingToken(conferenceId: string) {
+    return async (_dispatch: IStore['dispatch']) => {
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/meetings/token?conference_id=${encodeURIComponent(conferenceId)}`
+            );
+
+            if (!response.ok) {
+                return;
+            }
+
+            const data = await response.json();
+
+            // Store each token keyed by conference_id
+            if (Array.isArray(data)) {
+                for (const entry of data) {
+                    storeToken(entry.conference_id, entry.access_token);
+                }
+            }
+        } catch {
+            // Token fetch failures are non-fatal
+        }
+    };
+}
+
+/**
  * Fetch the list of meetings.
  *
  * @returns {Function} Async thunk action.
@@ -104,7 +173,14 @@ export function fetchMeetings() {
         dispatch({ type: FETCH_MEETINGS_REQUEST });
 
         try {
-            const response = await fetch(`${API_BASE_URL}/meetings`);
+            const tokens = getAllTokens();
+            const headers: Record<string, string> = {};
+
+            if (tokens.length > 0) {
+                headers['X-MI-Tokens'] = tokens.join(',');
+            }
+
+            const response = await fetch(`${API_BASE_URL}/meetings`, { headers });
 
             if (!response.ok) {
                 throw new Error(`HTTP error: ${response.status}`);
@@ -132,11 +208,13 @@ export function fetchMeetings() {
  * @returns {Function} Async thunk action.
  */
 export function fetchTranscript(meetingId: string) {
-    return async (dispatch: IStore['dispatch']) => {
+    return async (dispatch: IStore['dispatch'], getState: () => IReduxState) => {
         dispatch({ type: FETCH_TRANSCRIPT_REQUEST });
 
         try {
-            const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/transcript`);
+            const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/transcript`, {
+                headers: _getBearerHeaders(getState, meetingId)
+            });
 
             if (!response.ok) {
                 if (response.status === 404) {
@@ -172,11 +250,13 @@ export function fetchTranscript(meetingId: string) {
  * @returns {Function} Async thunk action.
  */
 export function fetchSummary(meetingId: string) {
-    return async (dispatch: IStore['dispatch']) => {
+    return async (dispatch: IStore['dispatch'], getState: () => IReduxState) => {
         dispatch({ type: FETCH_SUMMARY_REQUEST });
 
         try {
-            const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/summary`);
+            const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/summary`, {
+                headers: _getBearerHeaders(getState, meetingId)
+            });
 
             if (!response.ok) {
                 if (response.status === 404) {
@@ -212,12 +292,13 @@ export function fetchSummary(meetingId: string) {
  * @returns {Function} Async thunk action.
  */
 export function generateSummary(meetingId: string) {
-    return async (dispatch: IStore['dispatch']) => {
+    return async (dispatch: IStore['dispatch'], getState: () => IReduxState) => {
         dispatch({ type: GENERATE_SUMMARY_REQUEST });
 
         try {
             const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/summary`, {
-                method: 'POST'
+                method: 'POST',
+                headers: _getBearerHeaders(getState, meetingId)
             });
 
             if (!response.ok) {
@@ -246,9 +327,11 @@ export function generateSummary(meetingId: string) {
  * @returns {Function} Async thunk action.
  */
 export function fetchSpeakerStats(meetingId: string) {
-    return async (dispatch: IStore['dispatch']) => {
+    return async (dispatch: IStore['dispatch'], getState: () => IReduxState) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/speakers`);
+            const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/speakers`, {
+                headers: _getBearerHeaders(getState, meetingId)
+            });
 
             if (!response.ok) {
                 return;
@@ -285,9 +368,18 @@ export function searchTranscripts(query: string) {
         dispatch({ type: SEARCH_REQUEST });
 
         try {
+            const tokens = getAllTokens();
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json'
+            };
+
+            if (tokens.length > 0) {
+                headers['X-MI-Tokens'] = tokens.join(',');
+            }
+
             const response = await fetch(`${API_BASE_URL}/search`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ query, limit: 50 })
             });
 
@@ -340,12 +432,13 @@ export function setExportFormat(format: 'pdf' | 'markdown' | 'json') {
  * @returns {Function} Async thunk action.
  */
 export function exportMeeting(meetingId: string, format: string) {
-    return async (dispatch: IStore['dispatch']) => {
+    return async (dispatch: IStore['dispatch'], getState: () => IReduxState) => {
         dispatch({ type: EXPORT_REQUEST });
 
         try {
             const response = await fetch(
-                `${API_BASE_URL}/meetings/${meetingId}/export?format=${format}`
+                `${API_BASE_URL}/meetings/${meetingId}/export?format=${format}`,
+                { headers: _getBearerHeaders(getState, meetingId) }
             );
 
             if (!response.ok) {

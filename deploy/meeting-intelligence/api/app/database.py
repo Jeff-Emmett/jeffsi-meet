@@ -3,6 +3,7 @@ Database operations for the Meeting Intelligence API.
 """
 
 import json
+import secrets
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -103,16 +104,18 @@ class Database:
     ) -> str:
         """Create a new meeting record."""
         meeting_id = str(uuid.uuid4())
+        access_token = secrets.token_urlsafe(32)
 
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO meetings (
                     id, conference_id, conference_name, title,
-                    recording_path, started_at, status, metadata
+                    recording_path, started_at, status, access_token, metadata
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, 'recording', $7::jsonb)
+                VALUES ($1, $2, $3, $4, $5, $6, 'recording', $7, $8::jsonb)
             """, meeting_id, conference_id, conference_name, title,
-               recording_path, started_at or datetime.utcnow(), json.dumps(metadata or {}))
+               recording_path, started_at or datetime.utcnow(),
+               access_token, json.dumps(metadata or {}))
 
         return meeting_id
 
@@ -147,6 +150,91 @@ class Database:
                 SET {', '.join(set_clauses)}, updated_at = NOW()
                 WHERE id = ${i}::uuid
             """, *values)
+
+    async def list_meetings_by_tokens(
+        self,
+        tokens: List[str],
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """List meetings filtered by access tokens."""
+        if not tokens:
+            return []
+
+        async with self.pool.acquire() as conn:
+            if status:
+                rows = await conn.fetch("""
+                    SELECT id, conference_id, conference_name, title,
+                           started_at, ended_at, duration_seconds,
+                           status, created_at
+                    FROM meetings
+                    WHERE access_token = ANY($1) AND status = $2
+                    ORDER BY created_at DESC
+                    LIMIT $3 OFFSET $4
+                """, tokens, status, limit, offset)
+            else:
+                rows = await conn.fetch("""
+                    SELECT id, conference_id, conference_name, title,
+                           started_at, ended_at, duration_seconds,
+                           status, created_at
+                    FROM meetings
+                    WHERE access_token = ANY($1)
+                    ORDER BY created_at DESC
+                    LIMIT $2 OFFSET $3
+                """, tokens, limit, offset)
+
+            return [dict(row) for row in rows]
+
+    async def get_meeting_tokens_by_conference(
+        self,
+        conference_id: str
+    ) -> List[Dict[str, Any]]:
+        """Get access tokens for all meetings with a given conference_id."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT id, conference_id, access_token
+                FROM meetings
+                WHERE conference_id = $1 AND access_token IS NOT NULL
+                ORDER BY created_at DESC
+            """, conference_id)
+
+            return [dict(row) for row in rows]
+
+    async def get_meeting_access_token(
+        self,
+        meeting_id: str
+    ) -> Optional[str]:
+        """Get the access token for a specific meeting."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT access_token FROM meetings WHERE id = $1::uuid
+            """, meeting_id)
+
+            if row:
+                return row["access_token"]
+            return None
+
+    async def backfill_tokens(self):
+        """Generate access tokens for meetings that don't have one."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT id FROM meetings WHERE access_token IS NULL
+            """)
+
+            if not rows:
+                return 0
+
+            count = 0
+            for row in rows:
+                token = secrets.token_urlsafe(32)
+                await conn.execute("""
+                    UPDATE meetings SET access_token = $1 WHERE id = $2
+                """, token, row["id"])
+                count += 1
+
+            log.info("Backfilled access tokens", count=count)
+            return count
 
     # ==================== Transcripts ====================
 

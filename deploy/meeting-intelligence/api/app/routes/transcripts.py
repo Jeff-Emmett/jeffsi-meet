@@ -7,6 +7,8 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Request, Query
 from pydantic import BaseModel
 
+from ..auth import validate_meeting_access
+
 import structlog
 
 log = structlog.get_logger()
@@ -53,7 +55,9 @@ async def get_transcript(
     meeting_id: str,
     speaker: Optional[str] = Query(default=None, description="Filter by speaker ID")
 ):
-    """Get full transcript for a meeting."""
+    """Get full transcript for a meeting. Requires Bearer token."""
+    await validate_meeting_access(request, meeting_id)
+
     db = request.app.state.db
 
     # Verify meeting exists
@@ -96,7 +100,9 @@ async def get_transcript(
 
 @router.get("/{meeting_id}/speakers", response_model=SpeakersResponse)
 async def get_speakers(request: Request, meeting_id: str):
-    """Get speaker statistics for a meeting."""
+    """Get speaker statistics for a meeting. Requires Bearer token."""
+    await validate_meeting_access(request, meeting_id)
+
     db = request.app.state.db
 
     # Verify meeting exists
@@ -123,7 +129,9 @@ async def get_speakers(request: Request, meeting_id: str):
 
 @router.get("/{meeting_id}/transcript/text")
 async def get_transcript_text(request: Request, meeting_id: str):
-    """Get transcript as plain text."""
+    """Get transcript as plain text. Requires Bearer token."""
+    await validate_meeting_access(request, meeting_id)
+
     db = request.app.state.db
 
     # Verify meeting exists

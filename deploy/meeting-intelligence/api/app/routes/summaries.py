@@ -10,6 +10,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel
 
+from ..auth import validate_meeting_access
 from ..config import settings
 
 import structlog
@@ -116,7 +117,9 @@ def _summary_to_response(meeting_id: str, summary: dict) -> SummaryResponse:
 
 @router.get("/{meeting_id}/summary", response_model=SummaryResponse)
 async def get_summary(request: Request, meeting_id: str):
-    """Get AI-generated summary for a meeting."""
+    """Get AI-generated summary for a meeting. Requires Bearer token."""
+    await validate_meeting_access(request, meeting_id)
+
     db = request.app.state.db
 
     # Verify meeting exists
@@ -142,7 +145,9 @@ async def generate_summary(
     body: GenerateSummaryRequest,
     background_tasks: BackgroundTasks
 ):
-    """Generate AI summary for a meeting."""
+    """Generate AI summary for a meeting. Requires Bearer token."""
+    await validate_meeting_access(request, meeting_id)
+
     db = request.app.state.db
 
     # Verify meeting exists

@@ -21,6 +21,7 @@ CREATE TABLE meetings (
     status VARCHAR(50) DEFAULT 'recording',
     -- Status: 'recording', 'extracting_audio', 'transcribing', 'diarizing', 'summarizing', 'ready', 'failed'
     error_message TEXT,
+    access_token VARCHAR(64) UNIQUE,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -30,6 +31,7 @@ CREATE INDEX idx_meetings_conference_id ON meetings(conference_id);
 CREATE INDEX idx_meetings_status ON meetings(status);
 CREATE INDEX idx_meetings_started_at ON meetings(started_at DESC);
 CREATE INDEX idx_meetings_created_at ON meetings(created_at DESC);
+CREATE INDEX idx_meetings_access_token ON meetings(access_token);
 
 -- ============================================================
 -- Meeting Participants

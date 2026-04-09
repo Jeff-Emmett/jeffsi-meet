@@ -7,6 +7,8 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Request, Query
 from pydantic import BaseModel
 
+from ..auth import get_bearer_token, get_multi_tokens, validate_meeting_access
+
 import structlog
 
 log = structlog.get_logger()
@@ -36,6 +38,39 @@ class MeetingListResponse(BaseModel):
     offset: int
 
 
+class MeetingTokenResponse(BaseModel):
+    conference_id: str
+    meeting_id: str
+    access_token: str
+
+
+@router.get("/token", response_model=List[MeetingTokenResponse])
+async def get_meeting_token(
+    request: Request,
+    conference_id: str = Query(..., description="Room name to look up tokens for")
+):
+    """Get access tokens for meetings by conference_id (room name).
+
+    This is the only unauthenticated endpoint (besides /health).
+    Knowing the room name is proof of attendance.
+    """
+    db = request.app.state.db
+
+    meetings = await db.get_meeting_tokens_by_conference(conference_id)
+
+    if not meetings:
+        raise HTTPException(status_code=404, detail="No meetings found for this conference")
+
+    return [
+        MeetingTokenResponse(
+            conference_id=m["conference_id"],
+            meeting_id=str(m["id"]),
+            access_token=m["access_token"]
+        )
+        for m in meetings
+    ]
+
+
 @router.get("", response_model=MeetingListResponse)
 async def list_meetings(
     request: Request,
@@ -43,10 +78,20 @@ async def list_meetings(
     offset: int = Query(default=0, ge=0),
     status: Optional[str] = Query(default=None)
 ):
-    """List all meetings with pagination."""
-    db = request.app.state.db
+    """List meetings the caller has access to.
 
-    meetings = await db.list_meetings(limit=limit, offset=offset, status=status)
+    Requires X-MI-Tokens header with comma-separated access tokens.
+    Returns only meetings matching the provided tokens.
+    """
+    db = request.app.state.db
+    tokens = get_multi_tokens(request)
+
+    if not tokens:
+        return MeetingListResponse(meetings=[], total=0, limit=limit, offset=offset)
+
+    meetings = await db.list_meetings_by_tokens(
+        tokens=tokens, limit=limit, offset=offset, status=status
+    )
 
     return MeetingListResponse(
         meetings=[
@@ -63,7 +108,7 @@ async def list_meetings(
             )
             for m in meetings
         ],
-        total=len(meetings),  # TODO: Add total count query
+        total=len(meetings),
         limit=limit,
         offset=offset
     )
@@ -71,9 +116,10 @@ async def list_meetings(
 
 @router.get("/{meeting_id}", response_model=MeetingResponse)
 async def get_meeting(request: Request, meeting_id: str):
-    """Get meeting details."""
-    db = request.app.state.db
+    """Get meeting details. Requires Bearer token."""
+    await validate_meeting_access(request, meeting_id)
 
+    db = request.app.state.db
     meeting = await db.get_meeting(meeting_id)
 
     if not meeting:
@@ -97,16 +143,15 @@ async def get_meeting(request: Request, meeting_id: str):
 
 @router.delete("/{meeting_id}")
 async def delete_meeting(request: Request, meeting_id: str):
-    """Delete a meeting and all associated data."""
-    db = request.app.state.db
+    """Delete a meeting and all associated data. Requires Bearer token."""
+    await validate_meeting_access(request, meeting_id)
 
+    db = request.app.state.db
     meeting = await db.get_meeting(meeting_id)
 
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
-    # TODO: Implement cascade delete
-    # For now, just mark as deleted
     await db.update_meeting(meeting_id, status="deleted")
 
     return {"status": "deleted", "meeting_id": meeting_id}

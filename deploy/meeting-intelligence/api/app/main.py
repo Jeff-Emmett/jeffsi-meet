@@ -45,6 +45,12 @@ async def lifespan(app: FastAPI):
     # Make database available to routes
     app.state.db = state.db
 
+    # Backfill access tokens for any meetings created before auth was added
+    try:
+        await state.db.backfill_tokens()
+    except Exception as e:
+        log.warning("Token backfill failed (non-fatal)", error=str(e))
+
     log.info("Meeting Intelligence API started successfully")
 
     yield
