@@ -33,6 +33,8 @@ body {
     overflow: hidden;
     color: #F1F1F1;
     background: #040404; // should match DEFAULT_BACKGROUND from interface_config
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 /**
