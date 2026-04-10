@@ -48,29 +48,37 @@ class Database:
         self,
         limit: int = 50,
         offset: int = 0,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        conference_prefix: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """List meetings with pagination."""
+        """List meetings with pagination. Optionally filter by conference_id prefix."""
         async with self.pool.acquire() as conn:
+            conditions = []
+            params: list = []
+            idx = 1
+
             if status:
-                rows = await conn.fetch("""
-                    SELECT id, conference_id, conference_name, title,
-                           started_at, ended_at, duration_seconds,
-                           status, created_at
-                    FROM meetings
-                    WHERE status = $1
-                    ORDER BY created_at DESC
-                    LIMIT $2 OFFSET $3
-                """, status, limit, offset)
-            else:
-                rows = await conn.fetch("""
-                    SELECT id, conference_id, conference_name, title,
-                           started_at, ended_at, duration_seconds,
-                           status, created_at
-                    FROM meetings
-                    ORDER BY created_at DESC
-                    LIMIT $1 OFFSET $2
-                """, limit, offset)
+                conditions.append(f"status = ${idx}")
+                params.append(status)
+                idx += 1
+
+            if conference_prefix:
+                conditions.append(f"conference_id LIKE ${idx}")
+                params.append(conference_prefix + "%")
+                idx += 1
+
+            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            params.extend([limit, offset])
+
+            rows = await conn.fetch(f"""
+                SELECT id, conference_id, conference_name, title,
+                       started_at, ended_at, duration_seconds,
+                       status, created_at
+                FROM meetings
+                {where}
+                ORDER BY created_at DESC
+                LIMIT ${idx} OFFSET ${idx + 1}
+            """, *params)
 
             return [dict(row) for row in rows]
 
@@ -156,33 +164,40 @@ class Database:
         tokens: List[str],
         limit: int = 50,
         offset: int = 0,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        conference_prefix: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """List meetings filtered by access tokens."""
+        """List meetings filtered by access tokens. Optionally filter by conference_id prefix."""
         if not tokens:
             return []
 
         async with self.pool.acquire() as conn:
+            conditions = ["access_token = ANY($1)"]
+            params: list = [tokens]
+            idx = 2
+
             if status:
-                rows = await conn.fetch("""
-                    SELECT id, conference_id, conference_name, title,
-                           started_at, ended_at, duration_seconds,
-                           status, created_at
-                    FROM meetings
-                    WHERE access_token = ANY($1) AND status = $2
-                    ORDER BY created_at DESC
-                    LIMIT $3 OFFSET $4
-                """, tokens, status, limit, offset)
-            else:
-                rows = await conn.fetch("""
-                    SELECT id, conference_id, conference_name, title,
-                           started_at, ended_at, duration_seconds,
-                           status, created_at
-                    FROM meetings
-                    WHERE access_token = ANY($1)
-                    ORDER BY created_at DESC
-                    LIMIT $2 OFFSET $3
-                """, tokens, limit, offset)
+                conditions.append(f"status = ${idx}")
+                params.append(status)
+                idx += 1
+
+            if conference_prefix:
+                conditions.append(f"conference_id LIKE ${idx}")
+                params.append(conference_prefix + "%")
+                idx += 1
+
+            where = " AND ".join(conditions)
+            params.extend([limit, offset])
+
+            rows = await conn.fetch(f"""
+                SELECT id, conference_id, conference_name, title,
+                       started_at, ended_at, duration_seconds,
+                       status, created_at
+                FROM meetings
+                WHERE {where}
+                ORDER BY created_at DESC
+                LIMIT ${idx} OFFSET ${idx + 1}
+            """, *params)
 
             return [dict(row) for row in rows]
 

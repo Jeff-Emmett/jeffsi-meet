@@ -76,12 +76,14 @@ async def list_meetings(
     request: Request,
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
-    status: Optional[str] = Query(default=None)
+    status: Optional[str] = Query(default=None),
+    conference_prefix: Optional[str] = Query(default=None, description="Filter by conference_id prefix (e.g. space slug)")
 ):
     """List meetings the caller has access to.
 
     Requires X-MI-Tokens header with comma-separated access tokens.
     Returns only meetings matching the provided tokens.
+    Optionally filter by conference_prefix to scope to a space.
     """
     db = request.app.state.db
     tokens = get_multi_tokens(request)
@@ -90,7 +92,8 @@ async def list_meetings(
         return MeetingListResponse(meetings=[], total=0, limit=limit, offset=offset)
 
     meetings = await db.list_meetings_by_tokens(
-        tokens=tokens, limit=limit, offset=offset, status=status
+        tokens=tokens, limit=limit, offset=offset, status=status,
+        conference_prefix=conference_prefix
     )
 
     return MeetingListResponse(
