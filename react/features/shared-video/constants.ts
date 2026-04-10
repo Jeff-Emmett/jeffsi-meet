@@ -35,6 +35,17 @@ export const PLAYBACK_STATUSES = {
 export const PLAYBACK_START = 'start';
 
 /**
+ * Video source types.
+ */
+export const VIDEO_SOURCE_TYPES = {
+    YOUTUBE: 'youtube',
+    VIMEO: 'vimeo',
+    DAILYMOTION: 'dailymotion',
+    TWITCH: 'twitch',
+    DIRECT: 'direct'
+} as const;
+
+/**
  * The domain for youtube URLs.
  */
 export const YOUTUBE_URL_DOMAIN = 'youtube.com';
@@ -46,5 +57,6 @@ export const ALLOW_ALL_URL_DOMAINS = '*';
 
 /**
  * The default white listed domains for shared video.
+ * Allow all domains so Vimeo, Dailymotion, Twitch etc. work out of the box.
  */
-export const DEFAULT_ALLOWED_URL_DOMAINS = [ YOUTUBE_URL_DOMAIN ];
+export const DEFAULT_ALLOWED_URL_DOMAINS = [ ALLOW_ALL_URL_DOMAINS ];

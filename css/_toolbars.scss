@@ -93,6 +93,7 @@
 
 .toolbox-content-wrapper::after {
     content: '';
+    display: block;
     background: $newToolbarBackgroundColor;
     padding-bottom: env(safe-area-inset-bottom, 0);
 }

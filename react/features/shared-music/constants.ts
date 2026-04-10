@@ -36,6 +36,10 @@ export const SOURCE_TYPES = {
     SPOTIFY: 'spotify',
     DAILYMOTION: 'dailymotion',
     TWITCH: 'twitch',
+    APPLE_MUSIC: 'apple_music',
+    DEEZER: 'deezer',
+    TIDAL: 'tidal',
+    BANDCAMP: 'bandcamp',
     DIRECT: 'direct'
 } as const;
 
@@ -73,3 +77,23 @@ export const DAILYMOTION_URL_DOMAIN = 'dailymotion.com';
  * Twitch domain.
  */
 export const TWITCH_URL_DOMAIN = 'twitch.tv';
+
+/**
+ * Apple Music domain.
+ */
+export const APPLE_MUSIC_URL_DOMAIN = 'music.apple.com';
+
+/**
+ * Deezer domain.
+ */
+export const DEEZER_URL_DOMAIN = 'deezer.com';
+
+/**
+ * Tidal domain.
+ */
+export const TIDAL_URL_DOMAIN = 'tidal.com';
+
+/**
+ * Bandcamp domain.
+ */
+export const BANDCAMP_URL_DOMAIN = 'bandcamp.com';

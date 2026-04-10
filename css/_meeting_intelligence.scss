@@ -7,6 +7,7 @@
     right: 0;
     top: 0;
     width: 400px;
+    max-width: 100%;
     height: 100%;
     background: rgba(28, 32, 37, 0.98);
     border-left: 1px solid rgba(255, 255, 255, 0.1);
@@ -14,6 +15,7 @@
     flex-direction: column;
     z-index: 350;
     box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+    padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 .meeting-intelligence-header {
@@ -42,8 +44,8 @@
         border: none;
         color: rgba(255, 255, 255, 0.7);
         cursor: pointer;
-        padding: 4px;
-        border-radius: 4px;
+        padding: 10px;
+        border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;

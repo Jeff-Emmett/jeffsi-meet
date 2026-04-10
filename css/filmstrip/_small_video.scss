@@ -7,11 +7,11 @@
     margin: 0 2px;
 
     &:hover {
-        cursor: hand;
+        cursor: pointer;
     }
 
     & > video {
-        cursor: hand;
+        cursor: pointer;
         border-radius: $borderRadius;
         object-fit: cover;
         overflow: hidden;

@@ -29,7 +29,7 @@
 }
 
 .layout-indicator {
-    bottom: 80px;
+    bottom: calc(100px + env(safe-area-inset-bottom, 0px));
     display: flex;
     gap: 6px;
     justify-content: center;
@@ -37,13 +37,13 @@
     pointer-events: none;
     position: absolute;
     right: 0;
-    z-index: 2;
+    z-index: 251;
 }
 
 .layout-indicator-dot {
     border-radius: 50%;
-    height: 6px;
-    width: 6px;
+    height: 8px;
+    width: 8px;
 }
 
 .layout-indicator-dot--active {
@@ -74,7 +74,7 @@
 #localVideoWrapper video,
 #localVideoWrapper object {
     border-radius: $borderRadius !important;
-    cursor: hand;
+    cursor: pointer;
     object-fit: cover;
 }
 

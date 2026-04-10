@@ -56,7 +56,7 @@ export const THRESHOLDS = [
     },
     {
         width: 200,
-        order: [ 'microphone', 'camera' ]
+        order: [ 'microphone', 'camera', 'hangup' ]
     }
 ];
 
@@ -162,6 +162,7 @@ export const TOOLBAR_BUTTONS: ToolbarButton[] = [
     'invite',
     'linktosalesforce',
     'livestreaming',
+    'meetingintelligence',
     'microphone',
     'mute-everyone',
     'mute-video-everyone',

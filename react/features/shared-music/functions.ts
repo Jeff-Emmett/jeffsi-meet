@@ -3,13 +3,17 @@ import { IJitsiConference } from '../base/conference/reducer';
 import { toState } from '../base/redux/functions';
 
 import {
+    APPLE_MUSIC_URL_DOMAIN,
+    BANDCAMP_URL_DOMAIN,
     DAILYMOTION_URL_DOMAIN,
+    DEEZER_URL_DOMAIN,
     PLAYBACK_START,
     PLAYBACK_STATUSES,
     SHARED_MUSIC,
     SOUNDCLOUD_URL_DOMAIN,
     SOURCE_TYPES,
     SPOTIFY_URL_DOMAIN,
+    TIDAL_URL_DOMAIN,
     TWITCH_URL_DOMAIN,
     VIMEO_URL_DOMAIN,
     YOUTUBE_MUSIC_URL_DOMAIN,
@@ -116,6 +120,64 @@ function getSpotifyInfo(url: string): { id: string; type: string; } | null {
 }
 
 /**
+ * Extracts Apple Music info from URL.
+ *
+ * @param {string} url - The entered URL.
+ * @returns {Object|null} The Apple Music info if matched.
+ */
+function getAppleMusicInfo(url: string): { id: string; path: string; } | null {
+    if (!url) {
+        return null;
+    }
+
+    // Matches music.apple.com/{country}/album/{name}/{id} or /playlist/{name}/{id}
+    const p = /(?:https?:\/\/)?music\.apple\.com\/([a-z]{2})\/(album|playlist|song)\/([^/]+)\/([a-zA-Z0-9.]+)/;
+    const result = url.match(p);
+
+    if (result) {
+        return { path: `${result[1]}/${result[2]}/${result[3]}/${result[4]}`, id: result[4] };
+    }
+
+    return null;
+}
+
+/**
+ * Extracts Deezer info from URL.
+ *
+ * @param {string} url - The entered URL.
+ * @returns {Object|null} The Deezer info if matched.
+ */
+function getDeezerInfo(url: string): { id: string; type: string; } | null {
+    if (!url) {
+        return null;
+    }
+
+    // Matches deezer.com/{country}/track/123, /album/123, /playlist/123
+    const p = /(?:https?:\/\/)?(?:www\.)?deezer\.com\/(?:[a-z]{2}\/)?(track|album|playlist)\/(\d+)/;
+    const result = url.match(p);
+
+    return result ? { type: result[1], id: result[2] } : null;
+}
+
+/**
+ * Extracts Tidal info from URL.
+ *
+ * @param {string} url - The entered URL.
+ * @returns {Object|null} The Tidal info if matched.
+ */
+function getTidalInfo(url: string): { id: string; type: string; } | null {
+    if (!url) {
+        return null;
+    }
+
+    // Matches tidal.com/browse/track/123, /album/123, /playlist/{uuid}
+    const p = /(?:https?:\/\/)?(?:www\.)?(?:listen\.)?tidal\.com\/(?:browse\/)?(track|album|playlist|mix)\/([a-zA-Z0-9-]+)/;
+    const result = url.match(p);
+
+    return result ? { type: result[1], id: result[2] } : null;
+}
+
+/**
  * Checks if the status is one that is actually sharing music - playing, pause or start.
  *
  * @param {string} status - The shared music status.
@@ -179,6 +241,22 @@ export function getSourceType(url: string): SourceType {
 
         if (hostname.includes(TWITCH_URL_DOMAIN)) {
             return SOURCE_TYPES.TWITCH;
+        }
+
+        if (hostname.includes(APPLE_MUSIC_URL_DOMAIN)) {
+            return SOURCE_TYPES.APPLE_MUSIC;
+        }
+
+        if (hostname.includes(DEEZER_URL_DOMAIN)) {
+            return SOURCE_TYPES.DEEZER;
+        }
+
+        if (hostname.includes(TIDAL_URL_DOMAIN)) {
+            return SOURCE_TYPES.TIDAL;
+        }
+
+        if (hostname.includes(BANDCAMP_URL_DOMAIN)) {
+            return SOURCE_TYPES.BANDCAMP;
         }
     } catch (_) {
         // Not a valid URL
@@ -273,6 +351,47 @@ export function extractMusicUrl(input: string): {
             return {
                 url: trimmedLink,
                 sourceType: SOURCE_TYPES.SOUNDCLOUD
+            };
+        }
+
+        // Apple Music
+        const appleMusicInfo = getAppleMusicInfo(trimmedLink);
+
+        if (appleMusicInfo) {
+            return {
+                url: trimmedLink,
+                sourceType: SOURCE_TYPES.APPLE_MUSIC,
+                embedInfo: { id: appleMusicInfo.id, type: appleMusicInfo.path }
+            };
+        }
+
+        // Deezer
+        const deezerInfo = getDeezerInfo(trimmedLink);
+
+        if (deezerInfo) {
+            return {
+                url: trimmedLink,
+                sourceType: SOURCE_TYPES.DEEZER,
+                embedInfo: deezerInfo
+            };
+        }
+
+        // Tidal
+        const tidalInfo = getTidalInfo(trimmedLink);
+
+        if (tidalInfo) {
+            return {
+                url: trimmedLink,
+                sourceType: SOURCE_TYPES.TIDAL,
+                embedInfo: tidalInfo
+            };
+        }
+
+        // Bandcamp - use full URL for embedding
+        if (hostname.includes(BANDCAMP_URL_DOMAIN)) {
+            return {
+                url: trimmedLink,
+                sourceType: SOURCE_TYPES.BANDCAMP
             };
         }
 

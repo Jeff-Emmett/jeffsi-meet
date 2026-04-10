@@ -72,6 +72,35 @@ function getEmbedUrl(url: string, sourceType: string): string {
 
         return url;
     }
+    case SOURCE_TYPES.APPLE_MUSIC: {
+        // Replace music.apple.com with embed.music.apple.com
+        return url.replace('music.apple.com', 'embed.music.apple.com');
+    }
+    case SOURCE_TYPES.DEEZER: {
+        // Extract type and ID: deezer.com/{country}/track/123
+        const deezerMatch = url.match(/deezer\.com\/(?:[a-z]{2}\/)?(track|album|playlist)\/(\d+)/);
+
+        if (deezerMatch) {
+            return `https://widget.deezer.com/widget/dark/${deezerMatch[1]}/${deezerMatch[2]}`;
+        }
+
+        return url;
+    }
+    case SOURCE_TYPES.TIDAL: {
+        // Extract type and ID: tidal.com/browse/track/123
+        const tidalMatch = url.match(/tidal\.com\/(?:browse\/)?(track|album|playlist|mix)\/([a-zA-Z0-9-]+)/);
+
+        if (tidalMatch) {
+            return `https://embed.tidal.com/${tidalMatch[1]}s/${tidalMatch[2]}`;
+        }
+
+        return url;
+    }
+    case SOURCE_TYPES.BANDCAMP: {
+        // Bandcamp doesn't have a simple embed URL transformation
+        // The full page URL works in an iframe for playback
+        return url;
+    }
     default:
         return url;
     }

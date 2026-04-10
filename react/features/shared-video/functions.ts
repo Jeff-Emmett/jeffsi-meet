@@ -9,6 +9,7 @@ import {
     PLAYBACK_STATUSES,
     SHARED_VIDEO,
     VIDEO_PLAYER_PARTICIPANT_NAME,
+    VIDEO_SOURCE_TYPES,
     YOUTUBE_PLAYER_PARTICIPANT_NAME,
     YOUTUBE_URL_DOMAIN
 } from './constants';
@@ -137,6 +138,95 @@ export function isURLAllowedForSharedVideo(url: string,
     }
 
     return false;
+}
+
+/**
+ * Determines the video source type from a URL or YouTube ID.
+ *
+ * @param {string} url - The video URL or YouTube ID.
+ * @returns {string} The source type.
+ */
+export function getVideoSourceType(url: string): string {
+    if (!url) {
+        return VIDEO_SOURCE_TYPES.DIRECT;
+    }
+
+    // If it doesn't look like a URL, it's a YouTube ID
+    if (!url.match(/^https?:\/\//)) {
+        return VIDEO_SOURCE_TYPES.YOUTUBE;
+    }
+
+    try {
+        const urlObj = new URL(url);
+        const hostname = urlObj.hostname.toLowerCase();
+
+        if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) {
+            return VIDEO_SOURCE_TYPES.YOUTUBE;
+        }
+
+        if (hostname.includes('vimeo.com')) {
+            return VIDEO_SOURCE_TYPES.VIMEO;
+        }
+
+        if (hostname.includes('dailymotion.com') || hostname.includes('dai.ly')) {
+            return VIDEO_SOURCE_TYPES.DAILYMOTION;
+        }
+
+        if (hostname.includes('twitch.tv')) {
+            return VIDEO_SOURCE_TYPES.TWITCH;
+        }
+    } catch (_) {
+        // Not a valid URL
+    }
+
+    return VIDEO_SOURCE_TYPES.DIRECT;
+}
+
+/**
+ * Generates an embed URL for video platforms.
+ *
+ * @param {string} url - The original URL.
+ * @param {string} sourceType - The source type.
+ * @returns {string} The embed URL.
+ */
+export function getVideoEmbedUrl(url: string, sourceType: string): string {
+    switch (sourceType) {
+    case VIDEO_SOURCE_TYPES.VIMEO: {
+        const vimeoMatch = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+
+        if (vimeoMatch) {
+            return `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1&autopause=0`;
+        }
+
+        return url;
+    }
+    case VIDEO_SOURCE_TYPES.DAILYMOTION: {
+        const dmMatch = url.match(/(?:dailymotion\.com\/video\/|dai\.ly\/)([a-zA-Z0-9]+)/);
+
+        if (dmMatch) {
+            return `https://www.dailymotion.com/embed/video/${dmMatch[1]}?autoplay=1`;
+        }
+
+        return url;
+    }
+    case VIDEO_SOURCE_TYPES.TWITCH: {
+        const parent = window.location.hostname;
+        const videoMatch = url.match(/twitch\.tv\/videos\/(\d+)/);
+        const channelMatch = url.match(/twitch\.tv\/([a-zA-Z0-9_]+)(?:\?|$)/);
+
+        if (videoMatch) {
+            return `https://player.twitch.tv/?video=v${videoMatch[1]}&parent=${parent}&autoplay=true`;
+        }
+
+        if (channelMatch && channelMatch[1] !== 'videos') {
+            return `https://player.twitch.tv/?channel=${channelMatch[1]}&parent=${parent}&autoplay=true`;
+        }
+
+        return url;
+    }
+    default:
+        return url;
+    }
 }
 
 /**

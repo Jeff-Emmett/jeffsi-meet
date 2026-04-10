@@ -3,6 +3,7 @@ import React from 'react';
 import GlobalStyles from '../../base/ui/components/GlobalStyles.web';
 import JitsiThemeProvider from '../../base/ui/components/JitsiThemeProvider.web';
 import DialogContainer from '../../base/ui/components/web/DialogContainer';
+import DialogErrorBoundary from '../../base/ui/components/web/DialogErrorBoundary';
 import ChromeExtensionBanner from '../../chrome-extension-banner/components/ChromeExtensionBanner.web';
 import OverlayContainer from '../../overlay/components/web/OverlayContainer';
 import PiP from '../../pip/components/PiP';
@@ -62,7 +63,9 @@ export class App extends AbstractApp {
     override _renderDialogContainer() {
         return (
             <JitsiThemeProvider>
-                <DialogContainer />
+                <DialogErrorBoundary>
+                    <DialogContainer />
+                </DialogErrorBoundary>
             </JitsiThemeProvider>
         );
     }
