@@ -24,6 +24,7 @@ import {
     isLocalScreenshareParticipant,
     isScreenShareParticipant,
     isSharedMusicParticipant,
+    isSharedVideoParticipant,
     isWhiteboardParticipant
 } from '../../../base/participants/functions';
 import { IParticipant } from '../../../base/participants/types';
@@ -41,6 +42,7 @@ import { hideGif, showGif } from '../../../gifs/actions';
 import { getGifDisplayMode, getGifForParticipant } from '../../../gifs/functions';
 import PresenceLabel from '../../../presence-status/components/PresenceLabel';
 import { SharedMusicTile } from '../../../shared-music/components';
+import { SharedVideoTile } from '../../../shared-video/components';
 import { LAYOUTS } from '../../../video-layout/constants';
 import { getCurrentLayout } from '../../../video-layout/functions.web';
 import { togglePinStageParticipant } from '../../actions';
@@ -935,6 +937,39 @@ class Thumbnail extends Component<IProps, IState> {
     }
 
     /**
+     * Renders a shared video participant thumbnail with embedded video player.
+     *
+     * @returns {ReactElement}
+     */
+    _renderSharedVideoParticipant() {
+        const { _isMobile, _participant } = this.props;
+        const { id, pinned, name } = _participant;
+        const styles = this._getStyles();
+        const containerClassName = this._getContainerClassName();
+
+        return (
+            <span
+                aria-label = { this.props.t(pinned ? 'unpinParticipant' : 'pinParticipant', {
+                    participantName: name
+                }) }
+                className = { containerClassName }
+                id = 'sharedVideoTileContainer'
+                onClick = { this._onClick }
+                onKeyDown = { this._onTogglePinButtonKeyDown }
+                { ...(_isMobile ? {} : {
+                    onMouseEnter: this._onMouseEnter,
+                    onMouseMove: this._onMouseMove,
+                    onMouseLeave: this._onMouseLeave
+                }) }
+                role = 'button'
+                style = { styles.thumbnail }
+                tabIndex = { 0 }>
+                <SharedVideoTile participantId = { id } />
+            </span>
+        );
+    }
+
+    /**
      * Renders the avatar.
      *
      * @param {Object} styles - The styles that will be applied to the avatar.
@@ -1213,6 +1248,11 @@ class Thumbnail extends Component<IProps, IState> {
         // Render SharedMusic with custom tile that shows video/controls
         if (isSharedMusicParticipant(_participant)) {
             return this._renderSharedMusicParticipant();
+        }
+
+        // Render SharedVideo with embedded player in tile view
+        if (isSharedVideoParticipant(_participant)) {
+            return this._renderSharedVideoParticipant();
         }
 
         if (fakeParticipant

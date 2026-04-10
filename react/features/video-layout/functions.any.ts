@@ -5,7 +5,7 @@ import { pinParticipant } from '../base/participants/actions';
 import { getParticipantCount, getPinnedParticipant } from '../base/participants/functions';
 import { FakeParticipant } from '../base/participants/types';
 import { isStageFilmstripAvailable, isTileViewModeDisabled } from '../filmstrip/functions';
-import { isVideoPlaying } from '../shared-video/functions';
+// isVideoPlaying no longer used to force exit from tile view
 import { VIDEO_QUALITY_LEVELS } from '../video-quality/constants';
 import { getReceiverVideoQualityLevel } from '../video-quality/functions';
 import { getMinHeightForQualityLvlMap } from '../video-quality/selector';
@@ -99,9 +99,6 @@ export function shouldDisplayTileView(state: IReduxState) {
 
         // It's a 1-on-1 meeting
         || participantCount < 3
-
-        // There is a shared YouTube video in the meeting
-        || isVideoPlaying(state)
 
         // We want jibri to use stage view by default
         || iAmRecorder

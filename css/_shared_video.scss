@@ -1,0 +1,63 @@
+/**
+ * Styles for the shared video tile in the filmstrip.
+ */
+
+.shared-video-tile {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.shared-video-player-wrapper {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+
+    iframe,
+    video {
+        width: 100%;
+        height: 100%;
+        border: none;
+    }
+}
+
+.shared-video-controls-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 8px;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+    z-index: 2;
+    pointer-events: none;
+}
+
+.shared-video-title {
+    color: #fff;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+    padding: 4px 8px;
+    max-width: 90%;
+    margin: 0 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 4px;
+}
+
+/* Ensure iframe is interactive for video controls */
+.shared-video-player-wrapper iframe,
+.shared-video-player-wrapper video {
+    pointer-events: auto;
+}

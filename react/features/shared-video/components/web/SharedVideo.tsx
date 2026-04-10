@@ -131,11 +131,13 @@ class SharedVideo extends Component<IProps> {
         }
 
         if (EMBED_VIDEO_TYPES.includes(sourceType as any)) {
-            return (<EmbedVideoManager
-                // @ts-ignore
-                sourceType = { sourceType }
-                // @ts-ignore
-                videoId = { videoUrl } />);
+            return (
+                <EmbedVideoManager
+                    // @ts-ignore
+                    sourceType = { sourceType }
+                    // @ts-ignore
+                    videoId = { videoUrl } />
+            );
         }
 
         return <VideoManager videoId = { videoUrl } />;
@@ -150,15 +152,11 @@ class SharedVideo extends Component<IProps> {
     override render() {
         const { isEnabled, isResizing, isVideoShared, onStage } = this.props;
 
-        if (!isEnabled || !isVideoShared) {
+        if (!isEnabled || !isVideoShared || !onStage) {
             return null;
         }
 
         const style: any = this.getDimensions();
-
-        if (!onStage) {
-            style.display = 'none';
-        }
 
         return (
             <div
