@@ -1,0 +1,18 @@
+services:
+  web:
+    labels:
+      - "sablier.enable=true"
+      - "sablier.group=jeffsi-meet"
+      - "traefik.enable=false"
+  prosody:
+    labels:
+      - "sablier.enable=true"
+      - "sablier.group=jeffsi-meet"
+  jicofo:
+    labels:
+      - "sablier.enable=true"
+      - "sablier.group=jeffsi-meet"
+  jvb:
+    labels:
+      - "sablier.enable=true"
+      - "sablier.group=jeffsi-meet"
