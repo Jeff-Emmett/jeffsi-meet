@@ -28,8 +28,7 @@ import ParticipantsPane from '../../../participants-pane/components/web/Particip
 import Prejoin from '../../../prejoin/components/web/Prejoin';
 import { isPrejoinPageVisible } from '../../../prejoin/functions.web';
 import ReactionAnimations from '../../../reactions/components/web/ReactionsAnimations';
-import { toggleToolboxVisible } from '../../../toolbox/actions.any';
-import { fullScreenChanged, showToolbox } from '../../../toolbox/actions.web';
+import { fullScreenChanged, hideToolbox, showToolbox } from '../../../toolbox/actions.web';
 import JitsiPortal from '../../../toolbox/components/web/JitsiPortal';
 import Toolbox from '../../../toolbox/components/web/Toolbox';
 import { toggleTileView } from '../../../video-layout/actions.any';
@@ -189,13 +188,6 @@ class Conference extends AbstractConference<IProps, any> {
     override componentDidMount() {
         document.title = `${this.props._roomName} | ${interfaceConfig.APP_NAME}`;
         this._start();
-
-        // On mobile browsers, show the toolbox immediately since there is no
-        // mouse-move event to trigger it.  The mobile timeout handler is a
-        // no-op so the toolbox stays visible until the user taps to hide it.
-        if (isMobileBrowser()) {
-            this.props.dispatch(showToolbox());
-        }
     }
 
     /**
@@ -429,9 +421,12 @@ class Conference extends AbstractConference<IProps, any> {
             return;
         }
 
-        // Short tap: <300ms, <10px movement.
+        // Short tap: <300ms, <10px movement. Show with auto-hide timeout if
+        // currently hidden; hide immediately if currently visible.
         if (elapsed < 300 && absDx < 10 && absDy < 10) {
-            this.props.dispatch(toggleToolboxVisible());
+            const visible = APP.store.getState()['features/toolbox'].visible;
+
+            this.props.dispatch(visible ? hideToolbox(true) : showToolbox());
         }
     }
 
