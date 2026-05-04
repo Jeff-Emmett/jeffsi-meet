@@ -60,6 +60,7 @@ import {
     isLocalTrackMuted
 } from '../../react/features/base/tracks/functions';
 import {
+    applyBreakoutAssignments,
     autoAssignToBreakoutRooms,
     broadcastToBreakoutRooms,
     clearBreakoutTimer,
@@ -245,6 +246,19 @@ function initCommands() {
                 return;
             }
             APP.store.dispatch(shuffleBreakoutRooms());
+        },
+        'apply-breakout-assignments': assignments => {
+            if (!isLocalParticipantModerator(APP.store.getState())) {
+                logger.error('Missing moderator rights to apply breakout assignments');
+
+                return;
+            }
+            if (!assignments || typeof assignments !== 'object') {
+                logger.error('apply-breakout-assignments: invalid payload');
+
+                return;
+            }
+            APP.store.dispatch(applyBreakoutAssignments(assignments));
         },
         'grant-moderator': participantId => {
             if (!isLocalParticipantModerator(APP.store.getState())) {

@@ -19,3 +19,8 @@ export const UPDATE_BREAKOUT_ROOMS = 'UPDATE_BREAKOUT_ROOMS';
  * `endTimestamp = null` clears the timer.
  */
 export const UPDATE_BREAKOUT_TIMER = 'UPDATE_BREAKOUT_TIMER';
+
+/**
+ * Action to set/clear the pre-assignment list. `payload = null` clears.
+ */
+export const SET_PENDING_BREAKOUT_ASSIGNMENTS = 'SET_PENDING_BREAKOUT_ASSIGNMENTS';

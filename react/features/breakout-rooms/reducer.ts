@@ -1,19 +1,21 @@
 import ReducerRegistry from '../base/redux/ReducerRegistry';
 
 import {
+    SET_PENDING_BREAKOUT_ASSIGNMENTS,
     UPDATE_BREAKOUT_ROOMS,
     UPDATE_BREAKOUT_TIMER,
     _RESET_BREAKOUT_ROOMS,
     _UPDATE_ROOM_COUNTER
 } from './actionTypes';
 import { FEATURE_KEY } from './constants';
-import { IRooms } from './types';
+import { IBreakoutAssignments, IRooms } from './types';
 
 const DEFAULT_STATE: IBreakoutRoomsState = {
     rooms: {},
     roomCounter: 0,
     timerEndTimestamp: null,
-    timerDurationMs: null
+    timerDurationMs: null,
+    pendingAssignments: null
 };
 
 export interface IBreakoutRoomsState {
@@ -25,6 +27,12 @@ export interface IBreakoutRoomsState {
 
     /** Original duration of the running timer in ms (for UI display). */
     timerDurationMs: number | null;
+
+    /**
+     * Unfulfilled pre-assignment list. Cleared as participants land in
+     * their target rooms; cleared entirely on conference leave.
+     */
+    pendingAssignments: IBreakoutAssignments | null;
 }
 
 /**
@@ -51,6 +59,12 @@ ReducerRegistry.register<IBreakoutRoomsState>(FEATURE_KEY, (state = DEFAULT_STAT
             ...state,
             timerEndTimestamp: action.endTimestamp ?? null,
             timerDurationMs: action.durationMs ?? null
+        };
+    }
+    case SET_PENDING_BREAKOUT_ASSIGNMENTS: {
+        return {
+            ...state,
+            pendingAssignments: action.payload ?? null
         };
     }
     case _RESET_BREAKOUT_ROOMS: {

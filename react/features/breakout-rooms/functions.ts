@@ -12,7 +12,8 @@ import { IJitsiParticipant } from '../base/participants/types';
 import { toState } from '../base/redux/functions';
 
 import { FEATURE_KEY } from './constants';
-import { IRoom, IRoomInfo, IRoomInfoParticipant, IRooms, IRoomsInfo } from './types';
+import logger from './logger';
+import { IBreakoutAssignments, IRoom, IRoomInfo, IRoomInfoParticipant, IRooms, IRoomsInfo } from './types';
 
 /**
  * Returns the rooms object for breakout rooms.
@@ -214,3 +215,106 @@ export const isAutoAssignParticipantsVisible = (stateful: IStateful) => {
         && Object.keys(rooms).length > 1
         && !hideAutoAssignButton;
 };
+
+/**
+ * Parse a `breakout-assignments=` URL search param. Accepts either a JSON
+ * object/array directly, or that JSON base64-url encoded. Returns a
+ * normalised {@link IBreakoutAssignments} or null on any error.
+ *
+ * Supported shapes:
+ *   1. `{ rooms: [{ name, participants: ["id1", "id2"] }, ...] }`
+ *   2. `[{ name, participants: [...] }, ...]`
+ *   3. `{ "displayName1": "Room A", "displayName2": "Room A", ... }` (Zoom-style)
+ *
+ * @param {string} value - The raw search-param value.
+ * @returns {IBreakoutAssignments | null}
+ */
+export function parseBreakoutAssignments(value: string | null | undefined): IBreakoutAssignments | null {
+    if (!value) {
+        return null;
+    }
+    let raw = value;
+
+    if (!raw.trim().startsWith('{') && !raw.trim().startsWith('[')) {
+        try {
+            // tolerate base64url
+            const padded = raw.replace(/-/g, '+').replace(/_/g, '/')
+                .padEnd(Math.ceil(raw.length / 4) * 4, '=');
+
+            raw = typeof atob === 'function'
+                ? atob(padded)
+                : Buffer.from(padded, 'base64').toString('utf8');
+        } catch (err) {
+            logger.warn('parseBreakoutAssignments: base64 decode failed', err);
+
+            return null;
+        }
+    }
+
+    let parsed: any;
+
+    try {
+        parsed = JSON.parse(raw);
+    } catch (err) {
+        logger.warn('parseBreakoutAssignments: JSON parse failed', err);
+
+        return null;
+    }
+
+    if (Array.isArray(parsed)) {
+        return { rooms: _normaliseAssignmentRooms(parsed) };
+    }
+    if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.rooms)) {
+            return { rooms: _normaliseAssignmentRooms(parsed.rooms) };
+        }
+
+        // Flat shape: { "<participantIdentifier>": "<roomName>", ... }
+        const byRoom = new Map<string, string[]>();
+
+        for (const [ id, name ] of Object.entries(parsed)) {
+            if (typeof name !== 'string' || !name.trim()) {
+                continue;
+            }
+            const list = byRoom.get(name.trim()) || [];
+
+            list.push(String(id));
+            byRoom.set(name.trim(), list);
+        }
+        if (!byRoom.size) {
+            return null;
+        }
+
+        return {
+            rooms: Array.from(byRoom.entries()).map(([ name, participants ]) => ({
+                name,
+                participants
+            }))
+        };
+    }
+
+    return null;
+}
+
+function _normaliseAssignmentRooms(arr: any[]) {
+    const out = [] as Array<{ name: string; participants: string[]; }>;
+
+    for (const r of arr) {
+        if (!r || typeof r !== 'object') {
+            continue;
+        }
+        const name = String(r.name ?? '').trim();
+
+        if (!name) {
+            continue;
+        }
+        const participants = Array.isArray(r.participants)
+            ? r.participants.map((p: unknown) => String(p)).filter(Boolean)
+            : [];
+
+        out.push({ name,
+            participants });
+    }
+
+    return out;
+}

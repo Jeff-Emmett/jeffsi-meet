@@ -28,7 +28,7 @@ import ParticipantsPane from '../../../participants-pane/components/web/Particip
 import Prejoin from '../../../prejoin/components/web/Prejoin';
 import { isPrejoinPageVisible } from '../../../prejoin/functions.web';
 import ReactionAnimations from '../../../reactions/components/web/ReactionsAnimations';
-import { fullScreenChanged, hideToolbox, showToolbox } from '../../../toolbox/actions.web';
+import { fullScreenChanged, showToolbox } from '../../../toolbox/actions.web';
 import JitsiPortal from '../../../toolbox/components/web/JitsiPortal';
 import Toolbox from '../../../toolbox/components/web/Toolbox';
 import { toggleTileView } from '../../../video-layout/actions.any';
@@ -188,6 +188,10 @@ class Conference extends AbstractConference<IProps, any> {
     override componentDidMount() {
         document.title = `${this.props._roomName} | ${interfaceConfig.APP_NAME}`;
         this._start();
+
+        // Show the toolbar on mount — desktop mouse-move auto-hides it after
+        // TOOLBAR_TIMEOUT; mobile tap-to-show (below) also arms that timer.
+        this.props.dispatch(showToolbox());
     }
 
     /**
@@ -421,12 +425,9 @@ class Conference extends AbstractConference<IProps, any> {
             return;
         }
 
-        // Short tap: <300ms, <10px movement. Show with auto-hide timeout if
-        // currently hidden; hide immediately if currently visible.
+        // Short tap: show toolbar and arm the auto-hide timer (same as desktop mouse-move).
         if (elapsed < 300 && absDx < 10 && absDy < 10) {
-            const visible = APP.store.getState()['features/toolbox'].visible;
-
-            this.props.dispatch(visible ? hideToolbox(true) : showToolbox());
+            this.props.dispatch(showToolbox());
         }
     }
 

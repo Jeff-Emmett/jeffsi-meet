@@ -27,6 +27,7 @@ import { clearNotifications, showNotification } from '../notifications/actions';
 import { NOTIFICATION_TIMEOUT_TYPE } from '../notifications/constants';
 
 import {
+    SET_PENDING_BREAKOUT_ASSIGNMENTS,
     UPDATE_BREAKOUT_TIMER,
     _RESET_BREAKOUT_ROOMS,
     _UPDATE_ROOM_COUNTER
@@ -42,9 +43,11 @@ import {
     getCurrentRoomId,
     getMainRoom,
     getRoomByJid,
-    isInBreakoutRoom
+    isInBreakoutRoom,
+    parseBreakoutAssignments
 } from './functions';
 import logger from './logger';
+import { IBreakoutAssignments } from './types';
 
 /**
  * Action to create a breakout room.
@@ -505,6 +508,174 @@ export function clearBreakoutTimer() {
             durationMs: null
         });
     };
+}
+
+/**
+ * Parse `?breakout-assignments=…` from the current URL and dispatch
+ * {@link applyBreakoutAssignments}. No-op outside browser context.
+ *
+ * @returns {Function}
+ */
+export function applyBreakoutAssignmentsFromUrl() {
+    return (dispatch: IStore['dispatch']) => {
+        if (typeof window === 'undefined' || !window.location?.search) {
+            return;
+        }
+        const params = new URLSearchParams(window.location.search);
+        const raw = params.get('breakout-assignments');
+        const parsed = parseBreakoutAssignments(raw);
+
+        if (parsed) {
+            dispatch(applyBreakoutAssignments(parsed));
+        }
+    };
+}
+
+/**
+ * Apply a Zoom-style pre-assignment list. Stores it as pending state and
+ * fulfils what's possible right now: creates any rooms that don't exist
+ * yet, and dispatches sendParticipantToRoom for each match it can find
+ * already in the conference. The middleware re-runs the matcher on every
+ * UPDATE_BREAKOUT_ROOMS so late-joiners get assigned automatically.
+ *
+ * @param {IBreakoutAssignments} assignments - Pre-assignment spec.
+ * @returns {Function}
+ */
+export function applyBreakoutAssignments(assignments: IBreakoutAssignments) {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        if (!assignments?.rooms?.length) {
+            return;
+        }
+        if (!isLocalParticipantModerator(getState())) {
+            logger.warn('applyBreakoutAssignments: moderator-only.');
+
+            return;
+        }
+
+        dispatch({
+            type: SET_PENDING_BREAKOUT_ASSIGNMENTS,
+            payload: assignments
+        });
+
+        const rooms = getBreakoutRooms(getState);
+        const existingNames = new Set(Object.values(rooms)
+            .filter(r => !r.isMainRoom)
+            .map(r => r.name));
+
+        for (const target of assignments.rooms) {
+            if (!existingNames.has(target.name)) {
+                dispatch(createBreakoutRoom(target.name));
+            }
+        }
+
+        // First-pass match runs immediately; the middleware retries on
+        // UPDATE_BREAKOUT_ROOMS / USER_JOINED so newly-created rooms and
+        // late participants resolve without further user action.
+        dispatch(_fulfilBreakoutAssignments());
+    };
+}
+
+/**
+ * Internal: try to fulfil pending assignments against current state. Called
+ * by middleware on UPDATE_BREAKOUT_ROOMS and USER_JOINED, and once
+ * proactively from {@link applyBreakoutAssignments}.
+ *
+ * @returns {Function}
+ */
+export function _fulfilBreakoutAssignments() {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        const state = getState();
+        const pending = state[FEATURE_KEY].pendingAssignments;
+
+        if (!pending?.rooms?.length) {
+            return;
+        }
+        if (!isLocalParticipantModerator(state)) {
+            return;
+        }
+
+        const rooms = getBreakoutRooms(getState);
+        const remoteParticipants = getRemoteParticipants(getState);
+        const remaining: IBreakoutAssignments = { rooms: [] };
+
+        for (const target of pending.rooms) {
+            const room = Object.values(rooms).find(r => !r.isMainRoom && r.name === target.name);
+
+            if (!room) {
+                // Room not yet in state — keep waiting (creation already dispatched).
+                remaining.rooms.push(target);
+                continue;
+            }
+
+            const stillUnmatched: string[] = [];
+
+            for (const identifier of target.participants) {
+                const id = _matchAssignmentParticipant(state, remoteParticipants, identifier);
+
+                if (id) {
+                    dispatch(sendParticipantToRoom(id, room.id));
+                } else {
+                    stillUnmatched.push(identifier);
+                }
+            }
+            if (stillUnmatched.length) {
+                remaining.rooms.push({ name: target.name,
+                    participants: stillUnmatched });
+            }
+        }
+
+        if (!remaining.rooms.length) {
+            dispatch({
+                type: SET_PENDING_BREAKOUT_ASSIGNMENTS,
+                payload: null
+            });
+        } else {
+            dispatch({
+                type: SET_PENDING_BREAKOUT_ASSIGNMENTS,
+                payload: remaining
+            });
+        }
+    };
+}
+
+/**
+ * Match a single identifier from an assignment against the live participant
+ * map. Tries (in order): participant id, JID resource, email, displayName.
+ *
+ * @param {Object} state - Redux state.
+ * @param {Map} remoteParticipants - Map of id → IParticipant (remotes).
+ * @param {string} identifier - Raw identifier from the assignment spec.
+ * @returns {string | undefined} Participant id when matched.
+ */
+function _matchAssignmentParticipant(state: any, remoteParticipants: Map<string, any>, identifier: string) {
+    if (!identifier) {
+        return undefined;
+    }
+    const lower = identifier.toLowerCase();
+
+    if (remoteParticipants.has(identifier)) {
+        return identifier;
+    }
+    for (const [ id, p ] of remoteParticipants) {
+        if (id === identifier
+                || p?.email?.toLowerCase() === lower
+                || p?.name?.toLowerCase() === lower) {
+            return id;
+        }
+    }
+
+    // Match by JID resource as fallback (full JID looks like room@conf/abc — abc === id).
+    const conference = state['features/base/conference']?.conference;
+
+    if (conference) {
+        for (const p of conference.getParticipants() || []) {
+            if (p.getJid?.()?.endsWith(`/${identifier}`)) {
+                return p.getId?.();
+            }
+        }
+    }
+
+    return undefined;
 }
 
 /**

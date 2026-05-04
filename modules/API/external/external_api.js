@@ -28,6 +28,7 @@ const ALWAYS_ON_TOP_FILENAMES = [
  */
 const commands = {
     addBreakoutRoom: 'add-breakout-room',
+    applyBreakoutAssignments: 'apply-breakout-assignments',
     answerKnockingParticipant: 'answer-knocking-participant',
     approveVideo: 'approve-video',
     askToUnmute: 'ask-to-unmute',

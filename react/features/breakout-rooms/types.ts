@@ -34,3 +34,19 @@ export interface IRoomInfoParticipant {
     jid: string;
     role: string;
 }
+
+/**
+ * Pre-assignment specification: a list of rooms with the participants that
+ * should land in each. Identifiers are matched against participant id,
+ * email, or displayName (in that order). Surfaced via the
+ * `?breakout-assignments=<base64-json>` deeplink param or the
+ * `apply-breakout-assignments` iframe API command.
+ */
+export interface IBreakoutAssignmentRoom {
+    name: string;
+    participants: string[];
+}
+
+export interface IBreakoutAssignments {
+    rooms: IBreakoutAssignmentRoom[];
+}

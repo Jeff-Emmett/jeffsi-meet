@@ -1,5 +1,9 @@
-import { ENDPOINT_MESSAGE_RECEIVED } from '../base/conference/actionTypes';
+import {
+    CONFERENCE_JOINED,
+    ENDPOINT_MESSAGE_RECEIVED
+} from '../base/conference/actionTypes';
 import { JitsiConferenceEvents } from '../base/lib-jitsi-meet';
+import { PARTICIPANT_JOINED } from '../base/participants/actionTypes';
 import {
     getParticipantById,
     isLocalParticipantModerator
@@ -15,7 +19,12 @@ import {
 } from '../notifications/constants';
 
 import { UPDATE_BREAKOUT_ROOMS, UPDATE_BREAKOUT_TIMER } from './actionTypes';
-import { clearBreakoutTimer, moveToRoom } from './actions';
+import {
+    _fulfilBreakoutAssignments,
+    applyBreakoutAssignmentsFromUrl,
+    clearBreakoutTimer,
+    moveToRoom
+} from './actions';
 import {
     BREAKOUT_BROADCAST_TYPE,
     BREAKOUT_HELP_REQUEST_TYPE,
@@ -122,6 +131,27 @@ MiddlewareRegistry.register(({ dispatch, getState }) => next => action => {
     const { type } = action;
 
     switch (type) {
+    case CONFERENCE_JOINED: {
+        // Parse pre-assignments from the URL on first join. Mid-conference
+        // re-joins (breakout swaps) won't re-parse because the param is
+        // already consumed and the store carries pendingAssignments through.
+        if (typeof window !== 'undefined') {
+            // Defer until after the action settles, so isLocalParticipantModerator
+            // sees the post-join role. Idempotent — applyBreakoutAssignments
+            // bails when no param is present.
+            setTimeout(() => dispatch(applyBreakoutAssignmentsFromUrl()), 0);
+        }
+        break;
+    }
+    case PARTICIPANT_JOINED: {
+        // Late joiner may match a still-pending assignment.
+        const { pendingAssignments } = getState()[FEATURE_KEY];
+
+        if (pendingAssignments?.rooms?.length) {
+            setTimeout(() => dispatch(_fulfilBreakoutAssignments()), 0);
+        }
+        break;
+    }
     case ENDPOINT_MESSAGE_RECEIVED: {
         const data = action.data;
 
@@ -253,6 +283,14 @@ MiddlewareRegistry.register(({ dispatch, getState }) => next => action => {
                     APP.API.notifyBreakoutRoomRemoved(_toApiPayload(room));
                 }
             }
+        }
+
+        // Re-attempt pending pre-assignments now that the room list has settled.
+        // The dispatch needs to run after this action has been reduced into state.
+        const { pendingAssignments } = getState()[FEATURE_KEY];
+
+        if (pendingAssignments?.rooms?.length) {
+            setTimeout(() => dispatch(_fulfilBreakoutAssignments()), 0);
         }
 
         // edit name if it was overwritten
