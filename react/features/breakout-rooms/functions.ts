@@ -240,10 +240,17 @@ export function parseBreakoutAssignments(value: string | null | undefined): IBre
             // tolerate base64url
             const padded = raw.replace(/-/g, '+').replace(/_/g, '/')
                 .padEnd(Math.ceil(raw.length / 4) * 4, '=');
+            const g: any = typeof globalThis === 'undefined' ? {} : globalThis;
 
-            raw = typeof atob === 'function'
-                ? atob(padded)
-                : Buffer.from(padded, 'base64').toString('utf8');
+            if (typeof g.atob === 'function') {
+                raw = g.atob(padded);
+            } else if (g.Buffer?.from) {
+                raw = g.Buffer.from(padded, 'base64').toString('utf8');
+            } else {
+                logger.warn('parseBreakoutAssignments: no base64 decoder available');
+
+                return null;
+            }
         } catch (err) {
             logger.warn('parseBreakoutAssignments: base64 decode failed', err);
 

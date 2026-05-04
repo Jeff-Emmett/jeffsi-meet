@@ -2,7 +2,7 @@ import {
     CONFERENCE_JOINED,
     ENDPOINT_MESSAGE_RECEIVED
 } from '../base/conference/actionTypes';
-import { JitsiConferenceEvents } from '../base/lib-jitsi-meet';
+import { JitsiConferenceEvents, JitsiRecordingConstants } from '../base/lib-jitsi-meet';
 import { PARTICIPANT_JOINED } from '../base/participants/actionTypes';
 import {
     getParticipantById,
@@ -32,7 +32,10 @@ import {
     BREAKOUT_TIMER_WARNING_MS,
     FEATURE_KEY
 } from './constants';
-import { isInBreakoutRoom } from './functions';
+import {
+    getBreakoutRoomsConfig,
+    isInBreakoutRoom
+} from './functions';
 import logger from './logger';
 import { IRoom, IRooms } from './types';
 
@@ -43,6 +46,85 @@ function _toApiPayload(room: IRoom) {
         name: room.name,
         isMainRoom: Boolean(room.isMainRoom)
     };
+}
+
+/**
+ * Start a file recording with the JMM envelope hint embedded as appData,
+ * provided the breakout-rooms config opts in and the local participant is
+ * a moderator. Idempotent against an already-running recording session
+ * (skips if one is present in the same conference).
+ */
+function _maybeAutoRecord(getState: () => any) {
+    const state = getState();
+    const cfg = getBreakoutRoomsConfig(state);
+
+    if (!cfg?.autoRecord) {
+        return;
+    }
+    if (!isLocalParticipantModerator(state)) {
+        return;
+    }
+
+    const conference = state['features/base/conference']?.conference;
+
+    if (!conference) {
+        return;
+    }
+
+    const existingSessions = state['features/recording']?.sessionDatas ?? [];
+
+    if (existingSessions.some((s: any) => s.mode === JitsiRecordingConstants.mode.FILE
+            && (s.status === 'on' || s.status === 'pending'))) {
+        return;
+    }
+
+    const inBreakout = isInBreakoutRoom(state);
+    const roomId = conference.getName?.();
+    const breakoutRoomsState = state[FEATURE_KEY]?.rooms ?? {};
+    const room = breakoutRoomsState[roomId];
+    const appData = {
+        file_recording_metadata: {
+            share: false,
+
+            // Envelope hint the recording service (e.g. rMeets MI sidecar)
+            // can read to route the resulting holon. Schema mirrors the
+            // rspace-online HolonEnvelope (sensitivity / computeTier /
+            // audience / retention / jurisdiction).
+            jmm_envelope: cfg.envelopeHint ?? null,
+
+            // Breakout context — surfaces room id/name to MI so each
+            // breakout's recording is tagged distinctly when multiple run
+            // simultaneously across the parent meeting.
+            breakout_room: room ? {
+                roomId: room.id,
+                name: room.name,
+                jid: room.jid,
+                isBreakout: !room.isMainRoom
+            } : {
+                roomId,
+                name: '',
+                jid: '',
+                isBreakout: inBreakout
+            }
+        }
+    };
+
+    try {
+        conference.startRecording({
+            mode: JitsiRecordingConstants.mode.FILE,
+            appData: JSON.stringify(appData)
+        });
+        if (typeof APP !== 'undefined') {
+            APP.API._sendEvent({
+                name: 'breakout-room-auto-record-started',
+                roomId,
+                roomName: room?.name ?? '',
+                envelopeHint: cfg.envelopeHint ?? null
+            });
+        }
+    } catch (err) {
+        logger.warn('breakout autoRecord: startRecording failed', err);
+    }
 }
 
 /**
@@ -141,6 +223,8 @@ MiddlewareRegistry.register(({ dispatch, getState }) => next => action => {
             // bails when no param is present.
             setTimeout(() => dispatch(applyBreakoutAssignmentsFromUrl()), 0);
         }
+        // Auto-record per breakout-room policy (config + moderator).
+        setTimeout(() => _maybeAutoRecord(getState), 0);
         break;
     }
     case PARTICIPANT_JOINED: {
