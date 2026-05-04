@@ -16,13 +16,17 @@ import {
 } from '../../../../../breakout-rooms/functions';
 import { IRoom } from '../../../../../breakout-rooms/types';
 
+import { AskForHelpButton } from './AskForHelpButton';
 import { AutoAssignButton } from './AutoAssignButton';
+import { BreakoutTimerControls } from './BreakoutTimerControls';
+import { BroadcastButton } from './BroadcastButton';
 import { CollapsibleRoom } from './CollapsibleRoom';
 import JoinActionButton from './JoinQuickActionButton';
 import { LeaveButton } from './LeaveButton';
 import RoomActionEllipsis from './RoomActionEllipsis';
 import { RoomContextMenu } from './RoomContextMenu';
 import { RoomParticipantContextMenu } from './RoomParticipantContextMenu';
+import { ShuffleButton } from './ShuffleButton';
 
 interface IProps {
 
@@ -70,7 +74,13 @@ export const RoomList = ({ searchString }: IProps) => {
     return (
         <>
             {inBreakoutRoom && <LeaveButton className = { classes.topMargin } />}
+            {inBreakoutRoom && <AskForHelpButton className = { classes.topMargin } />}
             {showAutoAssign && <AutoAssignButton className = { classes.topMargin } />}
+            {isLocalModerator && rooms.length > 0
+                && <ShuffleButton className = { classes.topMargin } />}
+            {isLocalModerator && rooms.length > 0
+                && <BroadcastButton className = { classes.topMargin } />}
+            <BreakoutTimerControls className = { classes.topMargin } />
             <div
                 aria-label = { t('breakoutRooms.breakoutList', 'breakout list') }
                 className = { classes.topMargin }

@@ -57,15 +57,24 @@
     "breakoutRooms": {
         "actions": {
             "add": "Add breakout room",
+            "askForHelp": "Ask for help",
             "autoAssign": "Auto assign to breakout rooms",
+            "broadcast": "Broadcast to all rooms",
+            "broadcastPlaceholder": "Message to all breakout rooms…",
+            "broadcastSend": "Send broadcast",
             "close": "Close",
             "join": "Join",
+            "joinRoom": "Join {{name}}",
             "leaveBreakoutRoom": "Leave breakout room",
             "more": "More",
             "remove": "Remove",
             "rename": "Rename",
             "renameBreakoutRoom": "Rename breakout room",
-            "sendToBreakoutRoom": "Send participant to:"
+            "sendToBreakoutRoom": "Send participant to:",
+            "shuffle": "Shuffle participants",
+            "startTimer": "Start timer",
+            "stopTimer": "Stop timer",
+            "timerDurationMinutes": "Duration (minutes)"
         },
         "breakoutList": "Breakout list",
         "buttonLabel": "Breakout rooms",
@@ -73,11 +82,17 @@
         "hideParticipantList": "Hide participant list",
         "mainRoom": "Main room",
         "notifications": {
+            "broadcastTitle": "Broadcast from moderator",
+            "helpRequested": "{{name}} in {{room}} requested help.",
+            "helpRequestedTitle": "Help requested",
             "joined": "Joining the \"{{name}}\" breakout room",
             "joinedMainRoom": "Joining the main room",
-            "joinedTitle": "Breakout Rooms"
+            "joinedTitle": "Breakout Rooms",
+            "timerWarning": "Less than a minute left in the breakout.",
+            "timerWarningTitle": "Breakout ending soon"
         },
         "showParticipantList": "Show participant list",
+        "timerLabel": "Time left: {{minutes}}:{{seconds}}",
         "title": "Breakout Rooms"
     },
     "calendarSync": {

@@ -13,7 +13,11 @@ import { CONFERENCE_LEAVE_REASONS } from '../base/conference/constants';
 import { getCurrentConference } from '../base/conference/functions';
 import { setAudioMuted, setVideoMuted } from '../base/media/actions';
 import { MEDIA_TYPE } from '../base/media/constants';
-import { getRemoteParticipants } from '../base/participants/functions';
+import {
+    getLocalParticipant,
+    getRemoteParticipants,
+    isLocalParticipantModerator
+} from '../base/participants/functions';
 import { createDesiredLocalTracks } from '../base/tracks/actions';
 import {
     getLocalTracks,
@@ -22,12 +26,23 @@ import {
 import { clearNotifications, showNotification } from '../notifications/actions';
 import { NOTIFICATION_TIMEOUT_TYPE } from '../notifications/constants';
 
-import { _RESET_BREAKOUT_ROOMS, _UPDATE_ROOM_COUNTER } from './actionTypes';
-import { FEATURE_KEY } from './constants';
+import {
+    UPDATE_BREAKOUT_TIMER,
+    _RESET_BREAKOUT_ROOMS,
+    _UPDATE_ROOM_COUNTER
+} from './actionTypes';
+import {
+    BREAKOUT_BROADCAST_TYPE,
+    BREAKOUT_HELP_REQUEST_TYPE,
+    BREAKOUT_TIMER_UPDATE_TYPE,
+    FEATURE_KEY
+} from './constants';
 import {
     getBreakoutRooms,
+    getCurrentRoomId,
     getMainRoom,
-    getRoomByJid
+    getRoomByJid,
+    isInBreakoutRoom
 } from './functions';
 import logger from './logger';
 
@@ -275,6 +290,220 @@ export function moveToRoom(roomId?: string) {
                 maxLines: 2
             }, NOTIFICATION_TIMEOUT_TYPE.MEDIUM));
         }
+    };
+}
+
+/**
+ * Action to shuffle (re-randomize) the participant assignment across the
+ * existing breakout rooms. Same wire path as `autoAssignToBreakoutRooms`,
+ * just analytics-tagged differently. Useful when a moderator wants to
+ * remix groups between iterations without recreating the rooms.
+ *
+ * @returns {Function}
+ */
+export function shuffleBreakoutRooms() {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        const rooms = getBreakoutRooms(getState);
+        const breakoutRooms = filter(rooms, room => !room.isMainRoom);
+
+        if (!breakoutRooms.length) {
+            return;
+        }
+
+        sendAnalytics(createBreakoutRoomsEvent('shuffle'));
+
+        const participantIds = Array.from(getRemoteParticipants(getState).keys());
+        const length = Math.ceil(participantIds.length / breakoutRooms.length);
+
+        chunk(shuffle(participantIds), length).forEach((group, index) =>
+            group.forEach(participantId => {
+                dispatch(sendParticipantToRoom(participantId, breakoutRooms[index].id));
+            })
+        );
+    };
+}
+
+/**
+ * Action to broadcast a moderator message into every breakout room. Sends a
+ * JSON payload in the moderator's current room (delivered as
+ * `ENDPOINT_MESSAGE_RECEIVED` to peers in that room) and emits an iframe
+ * API request so embedders can fan it out across MUCs server-side.
+ *
+ * @param {string} message - Plain-text message to broadcast.
+ * @returns {Function}
+ */
+export function broadcastToBreakoutRooms(message: string) {
+    return (_dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        const trimmed = (message ?? '').trim();
+
+        if (!trimmed) {
+            return;
+        }
+        if (!isLocalParticipantModerator(getState())) {
+            logger.warn('broadcastToBreakoutRooms: moderator-only.');
+
+            return;
+        }
+
+        const conference = getCurrentConference(getState);
+        const local = getLocalParticipant(getState());
+        const payload = {
+            type: BREAKOUT_BROADCAST_TYPE,
+            message: trimmed,
+            senderId: local?.id,
+            senderName: local?.name,
+            timestamp: Date.now()
+        };
+
+        try {
+            conference?.sendMessage?.(payload);
+        } catch (err) {
+            logger.warn('broadcastToBreakoutRooms: in-room send failed', err);
+        }
+
+        if (typeof APP !== 'undefined') {
+            const rooms = getBreakoutRooms(getState);
+            const targetRooms = Object.values(rooms)
+                .filter(r => !r.isMainRoom)
+                .map(r => ({ roomId: r.id, jid: r.jid, name: r.name }));
+
+            APP.API._sendEvent({
+                name: 'breakout-broadcast-send-requested',
+                ...payload,
+                rooms: targetRooms
+            });
+        }
+
+        sendAnalytics(createBreakoutRoomsEvent('broadcast'));
+    };
+}
+
+/**
+ * Action for a participant in a breakout room to ping the moderator(s) for
+ * help. Same JSON-message channel as broadcasts; the embedder can fan out
+ * across MUCs to ensure a moderator in the main room actually receives it.
+ *
+ * @returns {Function}
+ */
+export function requestBreakoutHelp() {
+    return (_dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        if (!isInBreakoutRoom(getState())) {
+            logger.debug('requestBreakoutHelp: not in a breakout room, ignoring.');
+
+            return;
+        }
+
+        const conference = getCurrentConference(getState);
+        const local = getLocalParticipant(getState());
+        const roomId = getCurrentRoomId(getState());
+        const room = roomId ? getBreakoutRooms(getState)[roomId] : undefined;
+        const payload = {
+            type: BREAKOUT_HELP_REQUEST_TYPE,
+            roomId,
+            roomName: room?.name,
+            roomJid: room?.jid,
+            participantId: local?.id,
+            participantName: local?.name,
+            timestamp: Date.now()
+        };
+
+        try {
+            conference?.sendMessage?.(payload);
+        } catch (err) {
+            logger.warn('requestBreakoutHelp: in-room send failed', err);
+        }
+
+        if (typeof APP !== 'undefined') {
+            APP.API._sendEvent({
+                name: 'breakout-help-request-sent',
+                ...payload
+            });
+        }
+
+        sendAnalytics(createBreakoutRoomsEvent('help.requested'));
+    };
+}
+
+/**
+ * Action to start (or update) the breakout-room timer. Broadcasts the
+ * end-timestamp so all participants converge on the same deadline; stores
+ * locally for the UI countdown.
+ *
+ * @param {number} durationMs - Duration in ms; `0` or negative clears.
+ * @returns {Function}
+ */
+export function setBreakoutTimer(durationMs: number) {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        if (!isLocalParticipantModerator(getState())) {
+            logger.warn('setBreakoutTimer: moderator-only.');
+
+            return;
+        }
+        if (!durationMs || durationMs <= 0) {
+            return dispatch(clearBreakoutTimer());
+        }
+
+        const endTimestamp = Date.now() + durationMs;
+        const conference = getCurrentConference(getState);
+        const payload = {
+            type: BREAKOUT_TIMER_UPDATE_TYPE,
+            endTimestamp,
+            durationMs
+        };
+
+        try {
+            conference?.sendMessage?.(payload);
+        } catch (err) {
+            logger.warn('setBreakoutTimer: in-room send failed', err);
+        }
+
+        if (typeof APP !== 'undefined') {
+            APP.API._sendEvent({
+                name: 'breakout-timer-set-requested',
+                ...payload
+            });
+        }
+
+        dispatch({
+            type: UPDATE_BREAKOUT_TIMER,
+            endTimestamp,
+            durationMs
+        });
+    };
+}
+
+/**
+ * Clear the breakout timer locally and broadcast the clear.
+ *
+ * @returns {Function}
+ */
+export function clearBreakoutTimer() {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        const conference = getCurrentConference(getState);
+        const payload = {
+            type: BREAKOUT_TIMER_UPDATE_TYPE,
+            endTimestamp: null,
+            durationMs: null
+        };
+
+        try {
+            conference?.sendMessage?.(payload);
+        } catch (err) {
+            logger.warn('clearBreakoutTimer: in-room send failed', err);
+        }
+
+        if (typeof APP !== 'undefined') {
+            APP.API._sendEvent({
+                name: 'breakout-timer-set-requested',
+                ...payload
+            });
+        }
+
+        dispatch({
+            type: UPDATE_BREAKOUT_TIMER,
+            endTimestamp: null,
+            durationMs: null
+        });
     };
 }
 
