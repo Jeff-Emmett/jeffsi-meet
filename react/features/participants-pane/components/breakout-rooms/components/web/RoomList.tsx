@@ -54,7 +54,12 @@ export const RoomList = ({ searchString }: IProps) => {
     const inBreakoutRoom = useSelector(isInBreakoutRoom);
     const isLocalModerator = useSelector(isLocalParticipantModerator);
     const showAutoAssign = useSelector(isAutoAssignParticipantsVisible);
-    const { hideJoinRoomButton } = useSelector(getBreakoutRoomsConfig);
+    const { allowSelfSelect, hideJoinRoomButton } = useSelector(getBreakoutRoomsConfig);
+
+    // Self-select is allowed by default (matches Jitsi's existing behaviour).
+    // Setting `breakoutRooms.allowSelfSelect: false` hides the join button
+    // for non-moderators — Zoom-style moderator-only assignment.
+    const canSelfSelect = isLocalModerator || allowSelfSelect !== false;
     const [ lowerMenu, raiseMenu, toggleMenu, menuEnter, menuLeave, raiseContext ] = useContextMenu<IRoom>();
     const [ lowerParticipantMenu, raiseParticipantMenu, toggleParticipantMenu,
         participantMenuEnter, participantMenuLeave, raiseParticipantContext ] = useContextMenu<{
@@ -97,7 +102,7 @@ export const RoomList = ({ searchString }: IProps) => {
                             searchString = { searchString }
                             toggleParticipantMenu = { toggleParticipantMenu }>
                             {!isMobileBrowser() && <>
-                                {!hideJoinRoomButton && <JoinActionButton room = { room } />}
+                                {!hideJoinRoomButton && canSelfSelect && <JoinActionButton room = { room } />}
                                 {isLocalModerator && !room.isMainRoom
                                     && <RoomActionEllipsis onClick = { toggleMenu(room) } />}
                             </>}
