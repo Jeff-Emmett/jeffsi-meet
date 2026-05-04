@@ -42,6 +42,27 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.fetchval("SELECT 1")
 
+    async def run_idempotent_migrations(self):
+        """
+        Apply schema changes that init.sql doesn't cover yet on existing
+        databases. Each statement is wrapped in IF NOT EXISTS / DO NOTHING
+        so the call is safe to run on every startup.
+        """
+        async with self.pool.acquire() as conn:
+            # Bot-substrate ingest needs a unique constraint to make
+            # transcript-chunk inserts idempotent under webhook retries.
+            await conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_transcripts_meeting_segment
+                  ON transcripts(meeting_id, segment_index)
+            """)
+            # Meetings.conference_id needs to be unique so the bot ingest
+            # can ON CONFLICT-upsert on it. Existing data already has
+            # one row per Jitsi conference, so the constraint is safe.
+            await conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_meetings_conference_id
+                  ON meetings(conference_id)
+            """)
+
     # ==================== Meetings ====================
 
     async def list_meetings(

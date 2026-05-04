@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import Database
-from .routes import meetings, transcripts, summaries, search, webhooks, export
+from .routes import meetings, transcripts, summaries, search, webhooks, export, ingest_bot
 
 import structlog
 
@@ -50,6 +50,12 @@ async def lifespan(app: FastAPI):
         await state.db.backfill_tokens()
     except Exception as e:
         log.warning("Token backfill failed (non-fatal)", error=str(e))
+
+    # Idempotent schema migrations (e.g. unique indexes for bot-substrate ingest)
+    try:
+        await state.db.run_idempotent_migrations()
+    except Exception as e:
+        log.warning("Idempotent migrations failed (non-fatal)", error=str(e))
 
     log.info("Meeting Intelligence API started successfully")
 
@@ -88,6 +94,7 @@ app.include_router(summaries.router, prefix="/meetings", tags=["Summaries"])
 app.include_router(search.router, prefix="/search", tags=["Search"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(export.router, prefix="/meetings", tags=["Export"])
+app.include_router(ingest_bot.router, prefix="/api/v1/ingest", tags=["BotIngest"])
 
 
 @app.get("/health")
