@@ -19,20 +19,20 @@ const DEFAULT_STATE: IBreakoutRoomsState = {
 };
 
 export interface IBreakoutRoomsState {
-    roomCounter: number;
-    rooms: IRooms;
-
-    /** Wall-clock ms when the breakout timer fires. null = no timer. */
-    timerEndTimestamp: number | null;
-
-    /** Original duration of the running timer in ms (for UI display). */
-    timerDurationMs: number | null;
 
     /**
      * Unfulfilled pre-assignment list. Cleared as participants land in
      * their target rooms; cleared entirely on conference leave.
      */
     pendingAssignments: IBreakoutAssignments | null;
+    roomCounter: number;
+    rooms: IRooms;
+
+    /** Original duration of the running timer in ms (for UI display). */
+    timerDurationMs: number | null;
+
+    /** Wall-clock ms when the breakout timer fires. Null = no timer. */
+    timerEndTimestamp: number | null;
 }
 
 /**

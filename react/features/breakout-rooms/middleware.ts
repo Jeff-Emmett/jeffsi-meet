@@ -53,6 +53,9 @@ function _toApiPayload(room: IRoom) {
  * provided the breakout-rooms config opts in and the local participant is
  * a moderator. Idempotent against an already-running recording session
  * (skips if one is present in the same conference).
+ *
+ * @param {Function} getState - Redux store state getter.
+ * @returns {void}
  */
 function _maybeAutoRecord(getState: () => any) {
     const state = getState();

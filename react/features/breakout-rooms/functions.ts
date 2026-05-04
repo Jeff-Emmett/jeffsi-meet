@@ -222,9 +222,9 @@ export const isAutoAssignParticipantsVisible = (stateful: IStateful) => {
  * normalised {@link IBreakoutAssignments} or null on any error.
  *
  * Supported shapes:
- *   1. `{ rooms: [{ name, participants: ["id1", "id2"] }, ...] }`
- *   2. `[{ name, participants: [...] }, ...]`
- *   3. `{ "displayName1": "Room A", "displayName2": "Room A", ... }` (Zoom-style)
+ *   1. `{ rooms: [{ name, participants: ["id1", "id2"] }, ...] }`.
+ *   2. `[{ name, participants: [...] }, ...]`.
+ *   3. `{ "displayName1": "Room A", "displayName2": "Room A", ... }` (Zoom-style).
  *
  * @param {string} value - The raw search-param value.
  * @returns {IBreakoutAssignments | null}
