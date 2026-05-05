@@ -74,7 +74,8 @@ async def _ensure_meeting_for_job(db, job_id: str, space_id: Optional[str] = Non
     """
     Find or create the meeting row that owns this bot job. Returns the
     meeting UUID. Idempotent — concurrent first-sight calls reconcile to
-    the same row by re-querying after the INSERT contention.
+    the same row via the partial unique index `uq_meetings_bot_conference_id`
+    (set up in `run_idempotent_migrations`) on `WHERE conference_id LIKE 'bot:%'`.
     """
     conference_id = f"bot:{job_id}"
     async with db.pool.acquire() as conn:
@@ -95,13 +96,14 @@ async def _ensure_meeting_for_job(db, job_id: str, space_id: Optional[str] = Non
                 INSERT INTO meetings (
                     id, conference_id, started_at, status, access_token, metadata
                 ) VALUES ($1, $2, $3, 'recording', $4, $5::jsonb)
-                ON CONFLICT (conference_id) DO NOTHING
+                ON CONFLICT (conference_id) WHERE conference_id LIKE 'bot:%'
+                  DO NOTHING
                 """,
                 meeting_id, conference_id, datetime.utcnow(), access_token,
                 json.dumps(meta),
             )
         except Exception:
-            # Race lost — re-query for the winner's row.
+            # Race lost or partial index missing — re-query for the winner's row.
             pass
         row = await conn.fetchrow(
             "SELECT id FROM meetings WHERE conference_id = $1",
@@ -128,21 +130,27 @@ async def ingest_transcript_chunk(payload: TranscriptChunkPayload, request: Requ
     start_seconds = payload.start_ms / 1000.0
     end_seconds = payload.end_ms / 1000.0
 
+    # Bot rows dedupe via external_segment_id = "<job_id>:<start_ms>".
+    # Partial unique index uq_transcripts_external_segment_id enforces
+    # uniqueness only for non-NULL values, so legacy Jitsi rows stay
+    # untouched.
+    external_segment_id = f"{payload.job_id}:{payload.start_ms}"
     async with db.pool.acquire() as conn:
         await conn.execute(
             """
             INSERT INTO transcripts (
                 meeting_id, segment_index, start_time, end_time,
-                speaker_name, speaker_label, text
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (meeting_id, segment_index) DO UPDATE SET
+                speaker_name, speaker_label, text, external_segment_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (external_segment_id) WHERE external_segment_id IS NOT NULL
+              DO UPDATE SET
                 start_time = EXCLUDED.start_time,
                 end_time = EXCLUDED.end_time,
                 speaker_name = EXCLUDED.speaker_name,
                 text = EXCLUDED.text
             """,
             meeting_uuid, payload.start_ms, start_seconds, end_seconds,
-            payload.speaker, payload.speaker, payload.text,
+            payload.speaker, payload.speaker, payload.text, external_segment_id,
         )
 
     return {"ok": True, "meeting_id": meeting_uuid}

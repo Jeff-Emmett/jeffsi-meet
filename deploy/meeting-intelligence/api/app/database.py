@@ -45,23 +45,49 @@ class Database:
     async def run_idempotent_migrations(self):
         """
         Apply schema changes that init.sql doesn't cover yet on existing
-        databases. Each statement is wrapped in IF NOT EXISTS / DO NOTHING
-        so the call is safe to run on every startup.
+        databases. Each statement runs in its own try/except so one
+        failure (e.g. duplicate-key conflict on legacy data) does not
+        block subsequent migrations.
+
+        Partial unique indexes are used where the global constraint
+        would conflict with existing data — bot-substrate ingest only
+        needs uniqueness within its own data, not across all rows.
         """
         async with self.pool.acquire() as conn:
-            # Bot-substrate ingest needs a unique constraint to make
-            # transcript-chunk inserts idempotent under webhook retries.
-            await conn.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS uq_transcripts_meeting_segment
-                  ON transcripts(meeting_id, segment_index)
-            """)
-            # Meetings.conference_id needs to be unique so the bot ingest
-            # can ON CONFLICT-upsert on it. Existing data already has
-            # one row per Jitsi conference, so the constraint is safe.
-            await conn.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS uq_meetings_conference_id
-                  ON meetings(conference_id)
-            """)
+            # 1. Bot meetings only: conference_id starting with 'bot:'.
+            # ON CONFLICT in ingest_bot.py targets this index.
+            try:
+                await conn.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_meetings_bot_conference_id
+                      ON meetings(conference_id)
+                      WHERE conference_id LIKE 'bot:%'
+                """)
+            except Exception as e:
+                log.warning("migration: uq_meetings_bot_conference_id", error=str(e))
+
+            # 2. Add external_segment_id column for bot transcript dedupe.
+            # We can't put a partial index on (meeting_id, segment_index)
+            # for bot rows alone because Postgres partial-index predicates
+            # can't reference other tables, and existing legacy
+            # transcripts have duplicate (meeting_id, segment_index) rows.
+            try:
+                await conn.execute("""
+                    ALTER TABLE transcripts
+                      ADD COLUMN IF NOT EXISTS external_segment_id TEXT
+                """)
+            except Exception as e:
+                log.warning("migration: transcripts.external_segment_id", error=str(e))
+
+            # 3. Unique on external_segment_id when set — only bot rows
+            # populate it, so legacy data is untouched.
+            try:
+                await conn.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_transcripts_external_segment_id
+                      ON transcripts(external_segment_id)
+                      WHERE external_segment_id IS NOT NULL
+                """)
+            except Exception as e:
+                log.warning("migration: uq_transcripts_external_segment_id", error=str(e))
 
     # ==================== Meetings ====================
 
