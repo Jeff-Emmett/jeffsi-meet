@@ -753,6 +753,9 @@ var config = {
     // Setting this to null, will also disable showing the remote videos
     // when the toolbar is shown on mouse movements
     // disable1On1Mode: null | false | true,
+    // rspace policy: keep all participants visible, never auto-collapse to a single
+    // remote when there are only 2 participants in the call.
+    disable1On1Mode: true,
 
     // Default local name to be displayed
     // defaultLocalDisplayName: 'me',
@@ -896,21 +899,13 @@ var config = {
     // ],
 
     // Holds values related to toolbar visibility control.
-    // toolbarConfig: {
-    //     // Moved from interfaceConfig.INITIAL_TOOLBAR_TIMEOUT
-    //     // The initial number of milliseconds for the toolbar buttons to be visible on screen.
-    //     initialTimeout: 20000,
-    //     // Moved from interfaceConfig.TOOLBAR_TIMEOUT
-    //     // Number of milliseconds for the toolbar buttons to be visible on screen.
-    //     timeout: 4000,
-    //     // Moved from interfaceConfig.TOOLBAR_ALWAYS_VISIBLE
-    //     // Whether toolbar should be always visible or should hide after x milliseconds.
-    //     alwaysVisible: false,
-    //     // Indicates whether the toolbar should still autohide when chat is open
-    //     autoHideWhileChatIsOpen: false,
-    //     // Default background color for the main toolbar. Accepts any valid CSS color.
-    //     // backgroundColor: '#ffffff',
-    // },
+    // rspace policy: 5s auto-hide after no interaction, 20s initial visibility.
+    toolbarConfig: {
+        initialTimeout: 20000,
+        timeout: 5000,
+        alwaysVisible: false,
+        autoHideWhileChatIsOpen: false,
+    },
 
     // Overrides the buttons displayed in the main toolbar. Depending on the screen size the number of displayed
     // buttons varies from 2 buttons to 8 buttons. Every array in the mainToolbarButtons array will replace the

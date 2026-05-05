@@ -112,6 +112,15 @@ MiddlewareRegistry.register(store => next => action => {
 
         requestWakeLock();
 
+        // rspace TASK-RMEETS-UI-POLISH item 6: keep call audio playing
+        // when the screen turns off on mobile. Mobile-only no-op on desktop.
+        try {
+            const roomName = (getState()['features/base/conference'] as any)?.room ?? 'Meeting';
+            require('../../conference/background-audio.web').startBackgroundAudioKeepAlive(roomName);
+        } catch (e) {
+            logger.warn('background-audio start failed', e);
+        }
+
         break;
     }
     case CONFERENCE_FAILED: {
@@ -146,6 +155,13 @@ MiddlewareRegistry.register(store => next => action => {
     case CONFERENCE_LEFT:
     case KICKED_OUT:
         releaseScreenLock();
+
+        // rspace TASK-RMEETS-UI-POLISH item 6: tear down background-audio loop.
+        try {
+            require('../../conference/background-audio.web').stopBackgroundAudioKeepAlive();
+        } catch (e) {
+            logger.warn('background-audio stop failed', e);
+        }
 
         break;
     case CONNECTION_DISCONNECTED: {

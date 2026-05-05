@@ -188,6 +188,15 @@ class Conference extends AbstractConference<IProps, any> {
     override componentDidMount() {
         document.title = `${this.props._roomName} | ${interfaceConfig.APP_NAME}`;
         this._start();
+
+        // Restore initial toolbox visibility on mobile so users see controls
+        // on join. Hides automatically after toolbarConfig.initialTimeout
+        // (currently 20s); subsequent show/hide is driven by tap events in
+        // _onTouchEnd. Without this call, mobile users had no way to discover
+        // the toolbar exists. (Refines fix from commit 40aa304.)
+        if (isMobileBrowser()) {
+            this.props.dispatch(showToolbox());
+        }
     }
 
     /**
