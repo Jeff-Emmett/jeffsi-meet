@@ -188,10 +188,6 @@ class Conference extends AbstractConference<IProps, any> {
     override componentDidMount() {
         document.title = `${this.props._roomName} | ${interfaceConfig.APP_NAME}`;
         this._start();
-
-        // Show the toolbar on mount — desktop mouse-move auto-hides it after
-        // TOOLBAR_TIMEOUT; mobile tap-to-show (below) also arms that timer.
-        this.props.dispatch(showToolbox());
     }
 
     /**
