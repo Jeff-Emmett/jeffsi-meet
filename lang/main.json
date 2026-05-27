@@ -386,6 +386,7 @@
         "kickSystemTitle": "Ouch! You were kicked out of the meeting",
         "kickTitle": "Ouch! {{participantDisplayName}} kicked you out of the meeting",
         "learnMore": "learn more",
+        "leaveTitle": "Leave meeting?",
         "linkMeeting": "Link meeting",
         "linkMeetingTitle": "Link meeting to Salesforce",
         "liveStreaming": "Live Streaming",
