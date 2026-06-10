@@ -61,6 +61,19 @@ const FULL_SCREEN_EVENTS = [
 ];
 
 /**
+ * Returns whether the device is touch-capable. Catches tablets that report as
+ * desktop — notably iPadOS Safari, which masquerades as macOS, so
+ * {@link isMobileBrowser} is false for it. Used to enable touch-first toolbar
+ * affordances (initial show-on-join, swipe hint) on tablets too.
+ *
+ * @returns {boolean}
+ */
+function isTouchCapable() {
+    return (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0)
+        || (typeof window !== 'undefined' && 'ontouchstart' in window);
+}
+
+/**
  * The type of the React {@code Component} props of {@link Conference}.
  */
 interface IProps extends AbstractProps, WithTranslation {
@@ -188,6 +201,16 @@ class Conference extends AbstractConference<IProps, any> {
     override componentDidMount() {
         document.title = `${this.props._roomName} | ${interfaceConfig.APP_NAME}`;
         this._start();
+
+        // Show the toolbox on join for touch devices so controls are
+        // discoverable; it auto-hides after toolbarConfig.initialTimeout (~20s),
+        // after which tap-to-reveal (see _onVideospaceTouchEnd) takes over.
+        // Covers phones (isMobileBrowser) and tablets that report as desktop
+        // (isTouchCapable, e.g. iPadOS). Restores intent of commit c193435,
+        // which was lost in a later merge.
+        if (isMobileBrowser() || isTouchCapable()) {
+            this.props.dispatch(showToolbox());
+        }
     }
 
     /**
@@ -302,7 +325,7 @@ class Conference extends AbstractConference<IProps, any> {
                                 <MainFilmstrip />
                             </>)
                         }
-                        { isMobileBrowser() && (
+                        { (isMobileBrowser() || isTouchCapable()) && (
                             <div className = 'layout-indicator'>
                                 <div
                                     className = { `layout-indicator-dot ${
