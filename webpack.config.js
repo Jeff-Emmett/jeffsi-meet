@@ -350,7 +350,11 @@ module.exports = (_env, argv) => {
                 ...config.plugins,
                 ...getBundleAnalyzerPlugin(analyzeBundle, 'external_api')
             ],
-            performance: getPerformanceHints(perfHintOptions, 95 * 1024) },
+
+            // Bumped 95 -> 100 KiB: external_api.min.js drifted to ~95.2 KiB and
+            // tripped the production perf budget (hints: 'error'), failing the
+            // build. 100 KiB gives small headroom without inviting real bloat.
+            performance: getPerformanceHints(perfHintOptions, 100 * 1024) },
         { ...config,
             entry: {
                 'face-landmarks-worker': './react/features/face-landmarks/faceLandmarksWorker.ts'
