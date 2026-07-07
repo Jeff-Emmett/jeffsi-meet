@@ -1,7 +1,7 @@
 import { batch } from 'react-redux';
 import { AnyAction } from 'redux';
 
-import { ACTION_SHORTCUT_PRESSED, ACTION_SHORTCUT_RELEASED, createShortcutEvent } from '../analytics/AnalyticsEvents';
+import { createShortcutEvent } from '../analytics/AnalyticsEvents';
 import { sendAnalytics } from '../analytics/functions';
 import { IStore } from '../app/types';
 import { clickOnVideo } from '../filmstrip/actions.web';
@@ -16,7 +16,6 @@ import {
     UNREGISTER_KEYBOARD_SHORTCUT
 } from './actionTypes';
 import { areKeyboardShortcutsEnabled, getKeyboardShortcuts } from './functions';
-import logger from './logger';
 import { IKeyboardShortcut } from './types';
 import { getKeyboardKey, getPriorityFocusedElement } from './utils';
 
@@ -96,11 +95,13 @@ function initGlobalKeyboardShortcuts(dispatch: IStore['dispatch']) {
             }
         }));
 
-        // register SPACE shortcut in two steps to insure visibility of help message
+        // register SPACE shortcut in two steps to insure visibility of help message.
+        // rspace UX: SPACE toggles mute/unmute (was push-to-talk upstream); the
+        // actual toggle is handled directly in the global keydown handler below.
         dispatch(registerShortcut({
             character: ' ',
             helpCharacter: 'SPACE',
-            helpDescription: 'keyboardShortcuts.pushToTalk',
+            helpDescription: 'keyboardShortcuts.mute',
             handler: () => {
                 // Handled directly on the global handler.
             }
@@ -159,17 +160,6 @@ export function initKeyboardShortcuts() {
     return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
         initGlobalKeyboardShortcuts(dispatch);
 
-        const pttDelay = 50;
-        let pttTimeout: number | undefined;
-
-        // Used to chain the push to talk operations in order to fix an issue when on press we actually need to create
-        // a new track and the release happens before the track is created. In this scenario the release is ignored.
-        // The chaining would also prevent creating multiple new tracks if the space bar is pressed and released
-        // multiple times before the new track creation finish.
-        // TODO: Revisit the fix once we have better track management in LJM. It is possible that we would not need the
-        // chaining at all.
-        let mutePromise = Promise.resolve();
-
         keyUpHandler = (e: KeyboardEvent) => {
             const state = getState();
             const enabled = areKeyboardShortcutsEnabled(state);
@@ -180,16 +170,6 @@ export function initKeyboardShortcuts() {
             }
 
             const key = getKeyboardKey(e).toUpperCase();
-
-            if (key === ' ') {
-                clearTimeout(pttTimeout);
-                pttTimeout = window.setTimeout(() => {
-                    sendAnalytics(createShortcutEvent('push.to.talk', ACTION_SHORTCUT_RELEASED));
-                    logger.log('Talk shortcut released');
-                    mutePromise = mutePromise.then(() =>
-                        APP.conference.muteAudio(true).catch(() => { /* nothing to be done */ }));
-                }, pttDelay);
-            }
 
             if (shortcuts.has(key)) {
                 shortcuts.get(key)?.handler(e);
@@ -208,11 +188,16 @@ export function initKeyboardShortcuts() {
             const key = getKeyboardKey(e).toUpperCase();
 
             if (key === ' ' && !focusedElement) {
-                clearTimeout(pttTimeout);
-                sendAnalytics(createShortcutEvent('push.to.talk', ACTION_SHORTCUT_PRESSED));
-                logger.log('Talk shortcut pressed');
-                mutePromise = mutePromise.then(() =>
-                    APP.conference.muteAudio(false).catch(() => { /* nothing to be done */ }));
+                // rspace UX: SPACE toggles mute/unmute (upstream used it for
+                // push-to-talk). preventDefault stops the space bar from
+                // scrolling the page; `e.repeat` guards against the held-key
+                // auto-repeat flapping mute on/off.
+                e.preventDefault();
+                if (e.repeat) {
+                    return;
+                }
+                sendAnalytics(createShortcutEvent('mute'));
+                APP.conference.toggleAudioMuted();
             } else if (key === 'ESCAPE') {
                 focusedElement?.blur();
             }

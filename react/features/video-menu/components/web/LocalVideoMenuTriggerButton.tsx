@@ -245,7 +245,7 @@ const LocalVideoMenuTriggerButton = ({
                 onPopoverOpen = { _onPopoverOpen }
                 position = { _menuPosition }
                 visible = { Boolean(popoverVisible) }>
-                {buttonVisible && !isMobileBrowser() && (
+                {buttonVisible && (
                     <Button
                         accessibilityLabel = { t('dialog.localUserControls') }
                         className = { classes.triggerButton }

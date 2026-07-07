@@ -378,53 +378,6 @@ const defaultStyles = (theme: Theme) => {
             right: '3px',
             bottom: '3px',
             top: '3px'
-        },
-
-        /**
-         * Visible pin button (rspace TASK-RMEETS-UI-POLISH).
-         * Top-right of every thumbnail. Replaces the previous "click body to
-         * pin" gesture which caused accidental fullscreen on tap. Hidden by
-         * default; revealed on hover (desktop) or always-visible on touch.
-         */
-        rspacePinButton: {
-            position: 'absolute' as const,
-            top: '6px',
-            right: '6px',
-            zIndex: 11,
-            width: '28px',
-            height: '28px',
-            borderRadius: '50%',
-            background: 'rgba(0, 0, 0, 0.55)',
-            color: '#fff',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center' as const,
-            justifyContent: 'center' as const,
-            opacity: 0,
-            transition: 'opacity 0.15s, background 0.15s',
-            fontSize: '16px',
-            lineHeight: 1,
-            padding: 0,
-
-            '&:hover': {
-                background: 'rgba(0, 0, 0, 0.8)'
-            },
-
-            // Always-visible while pinned so users can find the unpin affordance
-            '&[data-pinned="true"]': {
-                opacity: 1,
-                background: 'rgba(76, 154, 255, 0.85)'
-            },
-
-            // Touch devices: no hover; show whenever the thumbnail is rendered
-            '@media (hover: none)': {
-                opacity: 0.7
-            }
-        },
-
-        rspacePinButtonVisible: {
-            opacity: 1
         }
     };
 };
@@ -782,11 +735,10 @@ class Thumbnail extends Component<IProps, IState> {
     /**
      * On click handler.
      *
-     * rspace policy (TASK-RMEETS-UI-POLISH): clicking the thumbnail body
-     * is a no-op. Pinning is now triggered by the explicit pin button
-     * rendered in the top-right corner (see render()). Body click was
-     * causing accidental fullscreen-on-tap; the dedicated pin icon
-     * makes the gesture explicit.
+     * Rspace policy (TASK-RMEETS-UI-POLISH): clicking the thumbnail body
+     * is a no-op. Pinning is triggered from the three-dot menu ("Pin to
+     * stage") in the corner of every tile. Body click was causing accidental
+     * fullscreen-on-tap; the explicit menu item makes the gesture deliberate.
      *
      * Keyboard pin path (`_onTogglePinButtonKeyDown` → `_onPinClick`)
      * preserves a11y; this handler stays bound for focus/blur/hover but
@@ -799,9 +751,11 @@ class Thumbnail extends Component<IProps, IState> {
     }
 
     /**
-     * Pin/unpin handler invoked by the visible pin button + keyboard
-     * a11y path. Mirrors the previous `_onClick` body verbatim.
+     * Pin/unpin handler invoked by the keyboard a11y path. Adds the
+     * participant to the stage filmstrip when it's active, otherwise falls
+     * back to the classic single large-video pin.
      *
+     * @param {React.MouseEvent | React.KeyboardEvent} [e] - The triggering event.
      * @returns {void}
      */
     _onPinClick(e?: React.MouseEvent | React.KeyboardEvent) {
@@ -1217,21 +1171,9 @@ class Thumbnail extends Component<IProps, IState> {
                 ) }
                 ref = { this.containerRef }
                 style = { styles.thumbnail }>
-                {/* Visible pin/unpin button (rspace TASK-RMEETS-UI-POLISH).
-                    Top-right of every thumbnail; replaces click-to-pin on body. */}
-                <Tooltip
-                    content = { pinButtonLabel }>
-                    <button
-                        aria-label = { pinButtonLabel }
-                        className = { classes.rspacePinButton }
-                        data-pinned = { pinned ? 'true' : 'false' }
-                        onClick = { this._onPinClick }
-                        type = 'button'>
-                        { pinned ? '★' : '☆' }
-                    </button>
-                </Tooltip>
-                {/* this "button" is invisible, only here so that
-                keyboard/screen reader users can pin/unpin */}
+                {/* Pinning now lives in the three-dot menu (Pin to stage).
+                    This invisible button preserves the keyboard/screen-reader
+                    pin affordance without a visible star cluttering every tile. */}
                 <Tooltip
                     content = { pinButtonLabel }>
                     <span

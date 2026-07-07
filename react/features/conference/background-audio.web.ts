@@ -50,6 +50,38 @@ function _setMediaSessionMeta(roomName: string): void {
     }
 }
 
+/**
+ * Registers MediaSession action handlers. Having handlers makes the OS treat
+ * this as a first-class media session (lock-screen transport controls on
+ * Android) and keeps it from tearing the session down under background
+ * throttling. The call's own mic button remains the real mute control — these
+ * handlers just keep the silent keep-alive loop playing and the playback state
+ * coherent, so pressing a stray lock-screen control can't kill the call audio.
+ *
+ * NOTE: iOS Safari locked-screen WebRTC audio remains a hard WebKit limitation
+ * that no web technique fully solves; only the native app can. On Android
+ * Chrome this materially improves backgrounded-call reliability.
+ *
+ * @returns {void}
+ */
+function _setMediaSessionHandlers(): void {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+
+    const keepPlaying = () => {
+        void _silentAudio?.play().catch(() => undefined);
+        try {
+            navigator.mediaSession.playbackState = 'playing';
+        } catch { /* ignore */ }
+    };
+
+    try {
+        navigator.mediaSession.setActionHandler('play', keepPlaying);
+        navigator.mediaSession.setActionHandler('pause', keepPlaying);
+    } catch {
+        // Some browsers throw on unsupported actions; failure is benign.
+    }
+}
+
 function _teardownGestureUnlock(): void {
     if (!_gestureUnlockHandler) return;
     document.removeEventListener('pointerdown', _gestureUnlockHandler);
@@ -85,6 +117,8 @@ export function startBackgroundAudioKeepAlive(roomName: string): void {
         // HTMLAudioElement may be unavailable in test/SSR environments.
     }
 
+    _setMediaSessionHandlers();
+
     _visibilityHandler = () => {
         if (document.visibilityState === 'visible') {
             _setMediaSessionMeta(roomName);
@@ -108,6 +142,10 @@ export function stopBackgroundAudioKeepAlive(): void {
     }
     _teardownGestureUnlock();
     if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+        try {
+            navigator.mediaSession.setActionHandler('play', null);
+            navigator.mediaSession.setActionHandler('pause', null);
+        } catch { /* ignore */ }
         try {
             navigator.mediaSession.playbackState = 'none';
             navigator.mediaSession.metadata = null;
