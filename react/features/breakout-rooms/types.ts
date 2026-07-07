@@ -37,8 +37,9 @@ export interface IRoomInfoParticipant {
 
 /**
  * Pre-assignment specification: a list of rooms with the participants that
- * should land in each. Identifiers are matched against participant id,
- * email, or displayName (in that order). Surfaced via the
+ * should land in each. Identifiers are matched against participant id, then a
+ * `did:` identifier (case-sensitive, against the participant's JWT identity),
+ * then email, then displayName. Surfaced via the
  * `?breakout-assignments=<base64-json>` deeplink param or the
  * `apply-breakout-assignments` iframe API command.
  */

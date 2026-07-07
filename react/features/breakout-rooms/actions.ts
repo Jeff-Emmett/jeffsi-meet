@@ -651,11 +651,29 @@ function _matchAssignmentParticipant(state: any, remoteParticipants: Map<string,
     if (!identifier) {
         return undefined;
     }
-    const lower = identifier.toLowerCase();
 
+    // Exact participant-id match (also covers a DID used directly as the endpoint id).
     if (remoteParticipants.has(identifier)) {
         return identifier;
     }
+
+    // DIDs are case-SENSITIVE (base58 multibase), so they get their own exact
+    // match against the participant's JWT identity (jwtId = JWT context.user.id,
+    // which is a DID once Layer-B identity is minted — see
+    // doc/breakout-jmjmj-identity.md). A DID never falls through to the
+    // case-insensitive name/email matching below.
+    if (identifier.startsWith('did:')) {
+        for (const [ id, p ] of remoteParticipants) {
+            if (p?.jwtId === identifier) {
+                return id;
+            }
+        }
+
+        return undefined;
+    }
+
+    const lower = identifier.toLowerCase();
+
     for (const [ id, p ] of remoteParticipants) {
         if (id === identifier
                 || p?.email?.toLowerCase() === lower
