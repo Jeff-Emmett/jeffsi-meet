@@ -244,6 +244,8 @@ class Conference extends AbstractConference<IProps, any> {
         FULL_SCREEN_EVENTS.forEach(name =>
             document.removeEventListener(name, this._onFullScreenChange));
 
+        document.removeEventListener('keydown', this._onShowToolbar);
+
         APP.conference.isJoined() && this.props.dispatch(hangup());
     }
 
@@ -517,6 +519,12 @@ class Conference extends AbstractConference<IProps, any> {
 
         FULL_SCREEN_EVENTS.forEach(name =>
             document.addEventListener(name, this._onFullScreenChange));
+
+        // Reveal the auto-hidden toolbar on any keyboard activity, matching the
+        // mouse-move (desktop) and touch (mobile) reveal paths. rspace UX: the
+        // toolbar hides after inactivity and pops back on mouse, touch OR key.
+        // `_onShowToolbar` is throttled in the constructor.
+        document.addEventListener('keydown', this._onShowToolbar);
 
         const { dispatch, t } = this.props;
 

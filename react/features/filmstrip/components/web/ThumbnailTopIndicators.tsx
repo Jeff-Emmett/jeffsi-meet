@@ -150,7 +150,7 @@ const ThumbnailTopIndicators = ({
                 popoverVisible = { popoverVisible }
                 showPopover = { showPopover }
                 thumbnailType = { thumbnailType }
-                visible = { isHovered } />
+                visible = { true } />
         </div>
     </>);
 };
