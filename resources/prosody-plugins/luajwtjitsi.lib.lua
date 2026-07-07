@@ -35,13 +35,38 @@ local function verifyRS (data, signature, key, algo)
 	return pubkey:verify(signature, datadigest)
 end
 
+-- Signs data with an Ed25519 (EdDSA) private key. Ed25519 signs the message
+-- directly — no pre-hash digest object, unlike RS* — so the raw signing-input
+-- string is passed straight to pkey:sign(). rspace EncryptID (TASK-470.9):
+-- the meeting-authority capability token is signed with the service's Ed25519
+-- key; Prosody verifies against the corresponding did:key public key.
+-- NB: requires a luaossl built against OpenSSL 1.1.1+ (Ed25519). ADDITIVE — the
+-- HS*/RS* paths are unchanged; EdDSA is used only for tokens declaring alg=EdDSA.
+local function signEdDSA (data, key)
+	local privkey = pkey.new(key)
+	if privkey == nil then
+		return nil, 'Not a private PEM key'
+	end
+	return privkey:sign(data)
+end
+
+-- Verifies an Ed25519 (EdDSA) signature. Pass the raw signing input (no digest).
+local function verifyEdDSA (data, signature, key)
+	local pubkey = pkey.new(key)
+	if pubkey == nil then
+		return false
+	end
+	return pubkey:verify(signature, data)
+end
+
 local alg_sign = {
 	['HS256'] = function(data, key) return hmac.new(key, 'sha256'):final(data) end,
 	['HS384'] = function(data, key) return hmac.new(key, 'sha384'):final(data) end,
 	['HS512'] = function(data, key) return hmac.new(key, 'sha512'):final(data) end,
 	['RS256'] = function(data, key) return signRS(data, key, 'sha256') end,
 	['RS384'] = function(data, key) return signRS(data, key, 'sha384') end,
-	['RS512'] = function(data, key) return signRS(data, key, 'sha512') end
+	['RS512'] = function(data, key) return signRS(data, key, 'sha512') end,
+	['EdDSA'] = function(data, key) return signEdDSA(data, key) end
 }
 
 local alg_verify = {
@@ -50,7 +75,8 @@ local alg_verify = {
 	['HS512'] = function(data, signature, key) return signature == alg_sign['HS512'](data, key) end,
 	['RS256'] = function(data, signature, key) return verifyRS(data, signature, key, 'sha256') end,
 	['RS384'] = function(data, signature, key) return verifyRS(data, signature, key, 'sha384') end,
-	['RS512'] = function(data, signature, key) return verifyRS(data, signature, key, 'sha512') end
+	['RS512'] = function(data, signature, key) return verifyRS(data, signature, key, 'sha512') end,
+	['EdDSA'] = function(data, signature, key) return verifyEdDSA(data, signature, key) end
 }
 
 -- Splits a token into segments, separated by '.'.
