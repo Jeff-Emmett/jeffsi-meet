@@ -13,7 +13,11 @@ import { CONFERENCE_LEAVE_REASONS } from '../base/conference/constants';
 import { getCurrentConference } from '../base/conference/functions';
 import { setAudioMuted, setVideoMuted } from '../base/media/actions';
 import { MEDIA_TYPE } from '../base/media/constants';
-import { getRemoteParticipants } from '../base/participants/functions';
+import {
+    getLocalParticipant,
+    getRemoteParticipants,
+    isLocalParticipantModerator
+} from '../base/participants/functions';
 import { createDesiredLocalTracks } from '../base/tracks/actions';
 import {
     getLocalTracks,
@@ -22,14 +26,28 @@ import {
 import { clearNotifications, showNotification } from '../notifications/actions';
 import { NOTIFICATION_TIMEOUT_TYPE } from '../notifications/constants';
 
-import { _RESET_BREAKOUT_ROOMS, _UPDATE_ROOM_COUNTER } from './actionTypes';
-import { FEATURE_KEY } from './constants';
+import {
+    SET_PENDING_BREAKOUT_ASSIGNMENTS,
+    UPDATE_BREAKOUT_TIMER,
+    _RESET_BREAKOUT_ROOMS,
+    _UPDATE_ROOM_COUNTER
+} from './actionTypes';
+import {
+    BREAKOUT_BROADCAST_TYPE,
+    BREAKOUT_HELP_REQUEST_TYPE,
+    BREAKOUT_TIMER_UPDATE_TYPE,
+    FEATURE_KEY
+} from './constants';
 import {
     getBreakoutRooms,
+    getCurrentRoomId,
     getMainRoom,
-    getRoomByJid
+    getRoomByJid,
+    isInBreakoutRoom,
+    parseBreakoutAssignments
 } from './functions';
 import logger from './logger';
+import { IBreakoutAssignments } from './types';
 
 /**
  * Action to create a breakout room.
@@ -276,6 +294,406 @@ export function moveToRoom(roomId?: string) {
             }, NOTIFICATION_TIMEOUT_TYPE.MEDIUM));
         }
     };
+}
+
+/**
+ * Action to shuffle (re-randomize) the participant assignment across the
+ * existing breakout rooms. Same wire path as `autoAssignToBreakoutRooms`,
+ * just analytics-tagged differently. Useful when a moderator wants to
+ * remix groups between iterations without recreating the rooms.
+ *
+ * @returns {Function}
+ */
+export function shuffleBreakoutRooms() {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        const rooms = getBreakoutRooms(getState);
+        const breakoutRooms = filter(rooms, room => !room.isMainRoom);
+
+        if (!breakoutRooms.length) {
+            return;
+        }
+
+        sendAnalytics(createBreakoutRoomsEvent('shuffle'));
+
+        const participantIds = Array.from(getRemoteParticipants(getState).keys());
+        const length = Math.ceil(participantIds.length / breakoutRooms.length);
+
+        chunk(shuffle(participantIds), length).forEach((group, index) =>
+            group.forEach(participantId => {
+                dispatch(sendParticipantToRoom(participantId, breakoutRooms[index].id));
+            })
+        );
+    };
+}
+
+/**
+ * Action to broadcast a moderator message into every breakout room. Sends a
+ * JSON payload in the moderator's current room (delivered as
+ * `ENDPOINT_MESSAGE_RECEIVED` to peers in that room) and emits an iframe
+ * API request so embedders can fan it out across MUCs server-side.
+ *
+ * @param {string} message - Plain-text message to broadcast.
+ * @returns {Function}
+ */
+export function broadcastToBreakoutRooms(message: string) {
+    return (_dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        const trimmed = (message ?? '').trim();
+
+        if (!trimmed) {
+            return;
+        }
+        if (!isLocalParticipantModerator(getState())) {
+            logger.warn('broadcastToBreakoutRooms: moderator-only.');
+
+            return;
+        }
+
+        const conference = getCurrentConference(getState);
+        const local = getLocalParticipant(getState());
+        const payload = {
+            type: BREAKOUT_BROADCAST_TYPE,
+            message: trimmed,
+            senderId: local?.id,
+            senderName: local?.name,
+            timestamp: Date.now()
+        };
+
+        try {
+            conference?.sendMessage?.(payload);
+        } catch (err) {
+            logger.warn('broadcastToBreakoutRooms: in-room send failed', err);
+        }
+
+        if (typeof APP !== 'undefined') {
+            const rooms = getBreakoutRooms(getState);
+            const targetRooms = Object.values(rooms)
+                .filter(r => !r.isMainRoom)
+                .map(r => ({ roomId: r.id, jid: r.jid, name: r.name }));
+
+            APP.API._sendEvent({
+                name: 'breakout-broadcast-send-requested',
+                ...payload,
+                rooms: targetRooms
+            });
+        }
+
+        sendAnalytics(createBreakoutRoomsEvent('broadcast'));
+    };
+}
+
+/**
+ * Action for a participant in a breakout room to ping the moderator(s) for
+ * help. Same JSON-message channel as broadcasts; the embedder can fan out
+ * across MUCs to ensure a moderator in the main room actually receives it.
+ *
+ * @returns {Function}
+ */
+export function requestBreakoutHelp() {
+    return (_dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        if (!isInBreakoutRoom(getState())) {
+            logger.debug('requestBreakoutHelp: not in a breakout room, ignoring.');
+
+            return;
+        }
+
+        const conference = getCurrentConference(getState);
+        const local = getLocalParticipant(getState());
+        const roomId = getCurrentRoomId(getState());
+        const room = roomId ? getBreakoutRooms(getState)[roomId] : undefined;
+        const payload = {
+            type: BREAKOUT_HELP_REQUEST_TYPE,
+            roomId,
+            roomName: room?.name,
+            roomJid: room?.jid,
+            participantId: local?.id,
+            participantName: local?.name,
+            timestamp: Date.now()
+        };
+
+        try {
+            conference?.sendMessage?.(payload);
+        } catch (err) {
+            logger.warn('requestBreakoutHelp: in-room send failed', err);
+        }
+
+        if (typeof APP !== 'undefined') {
+            APP.API._sendEvent({
+                name: 'breakout-help-request-sent',
+                ...payload
+            });
+        }
+
+        sendAnalytics(createBreakoutRoomsEvent('help.requested'));
+    };
+}
+
+/**
+ * Action to start (or update) the breakout-room timer. Broadcasts the
+ * end-timestamp so all participants converge on the same deadline; stores
+ * locally for the UI countdown.
+ *
+ * @param {number} durationMs - Duration in ms; `0` or negative clears.
+ * @returns {Function}
+ */
+export function setBreakoutTimer(durationMs: number) {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        if (!isLocalParticipantModerator(getState())) {
+            logger.warn('setBreakoutTimer: moderator-only.');
+
+            return;
+        }
+        if (!durationMs || durationMs <= 0) {
+            return dispatch(clearBreakoutTimer());
+        }
+
+        const endTimestamp = Date.now() + durationMs;
+        const conference = getCurrentConference(getState);
+        const payload = {
+            type: BREAKOUT_TIMER_UPDATE_TYPE,
+            endTimestamp,
+            durationMs
+        };
+
+        try {
+            conference?.sendMessage?.(payload);
+        } catch (err) {
+            logger.warn('setBreakoutTimer: in-room send failed', err);
+        }
+
+        if (typeof APP !== 'undefined') {
+            APP.API._sendEvent({
+                name: 'breakout-timer-set-requested',
+                ...payload
+            });
+        }
+
+        dispatch({
+            type: UPDATE_BREAKOUT_TIMER,
+            endTimestamp,
+            durationMs
+        });
+    };
+}
+
+/**
+ * Clear the breakout timer locally and broadcast the clear.
+ *
+ * @returns {Function}
+ */
+export function clearBreakoutTimer() {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        const conference = getCurrentConference(getState);
+        const payload = {
+            type: BREAKOUT_TIMER_UPDATE_TYPE,
+            endTimestamp: null,
+            durationMs: null
+        };
+
+        try {
+            conference?.sendMessage?.(payload);
+        } catch (err) {
+            logger.warn('clearBreakoutTimer: in-room send failed', err);
+        }
+
+        if (typeof APP !== 'undefined') {
+            APP.API._sendEvent({
+                name: 'breakout-timer-set-requested',
+                ...payload
+            });
+        }
+
+        dispatch({
+            type: UPDATE_BREAKOUT_TIMER,
+            endTimestamp: null,
+            durationMs: null
+        });
+    };
+}
+
+/**
+ * Parse `?breakout-assignments=…` from the current URL and dispatch
+ * {@link applyBreakoutAssignments}. No-op outside browser context.
+ *
+ * @returns {Function}
+ */
+export function applyBreakoutAssignmentsFromUrl() {
+    return (dispatch: IStore['dispatch']) => {
+        if (typeof window === 'undefined' || !window.location?.search) {
+            return;
+        }
+        const params = new URLSearchParams(window.location.search);
+        const raw = params.get('breakout-assignments');
+        const parsed = parseBreakoutAssignments(raw);
+
+        if (parsed) {
+            dispatch(applyBreakoutAssignments(parsed));
+        }
+    };
+}
+
+/**
+ * Apply a Zoom-style pre-assignment list. Stores it as pending state and
+ * fulfils what's possible right now: creates any rooms that don't exist
+ * yet, and dispatches sendParticipantToRoom for each match it can find
+ * already in the conference. The middleware re-runs the matcher on every
+ * UPDATE_BREAKOUT_ROOMS so late-joiners get assigned automatically.
+ *
+ * @param {IBreakoutAssignments} assignments - Pre-assignment spec.
+ * @returns {Function}
+ */
+export function applyBreakoutAssignments(assignments: IBreakoutAssignments) {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        if (!assignments?.rooms?.length) {
+            return;
+        }
+        if (!isLocalParticipantModerator(getState())) {
+            logger.warn('applyBreakoutAssignments: moderator-only.');
+
+            return;
+        }
+
+        dispatch({
+            type: SET_PENDING_BREAKOUT_ASSIGNMENTS,
+            payload: assignments
+        });
+
+        const rooms = getBreakoutRooms(getState);
+        const existingNames = new Set(Object.values(rooms)
+            .filter(r => !r.isMainRoom)
+            .map(r => r.name));
+
+        for (const target of assignments.rooms) {
+            if (!existingNames.has(target.name)) {
+                dispatch(createBreakoutRoom(target.name));
+            }
+        }
+
+        // First-pass match runs immediately; the middleware retries on
+        // UPDATE_BREAKOUT_ROOMS / USER_JOINED so newly-created rooms and
+        // late participants resolve without further user action.
+        dispatch(_fulfilBreakoutAssignments());
+    };
+}
+
+/**
+ * Internal: try to fulfil pending assignments against current state. Called
+ * by middleware on UPDATE_BREAKOUT_ROOMS and USER_JOINED, and once
+ * proactively from {@link applyBreakoutAssignments}.
+ *
+ * @returns {Function}
+ */
+export function _fulfilBreakoutAssignments() {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        const state = getState();
+        const pending = state[FEATURE_KEY].pendingAssignments;
+
+        if (!pending?.rooms?.length) {
+            return;
+        }
+        if (!isLocalParticipantModerator(state)) {
+            return;
+        }
+
+        const rooms = getBreakoutRooms(getState);
+        const remoteParticipants = getRemoteParticipants(getState);
+        const remaining: IBreakoutAssignments = { rooms: [] };
+
+        for (const target of pending.rooms) {
+            const room = Object.values(rooms).find(r => !r.isMainRoom && r.name === target.name);
+
+            if (!room) {
+                // Room not yet in state — keep waiting (creation already dispatched).
+                remaining.rooms.push(target);
+                continue;
+            }
+
+            const stillUnmatched: string[] = [];
+
+            for (const identifier of target.participants) {
+                const id = _matchAssignmentParticipant(state, remoteParticipants, identifier);
+
+                if (id) {
+                    dispatch(sendParticipantToRoom(id, room.id));
+                } else {
+                    stillUnmatched.push(identifier);
+                }
+            }
+            if (stillUnmatched.length) {
+                remaining.rooms.push({ name: target.name,
+                    participants: stillUnmatched });
+            }
+        }
+
+        if (!remaining.rooms.length) {
+            dispatch({
+                type: SET_PENDING_BREAKOUT_ASSIGNMENTS,
+                payload: null
+            });
+        } else {
+            dispatch({
+                type: SET_PENDING_BREAKOUT_ASSIGNMENTS,
+                payload: remaining
+            });
+        }
+    };
+}
+
+/**
+ * Match a single identifier from an assignment against the live participant
+ * map. Tries (in order): participant id, JID resource, email, displayName.
+ *
+ * @param {Object} state - Redux state.
+ * @param {Map} remoteParticipants - Map of id → IParticipant (remotes).
+ * @param {string} identifier - Raw identifier from the assignment spec.
+ * @returns {string | undefined} Participant id when matched.
+ */
+function _matchAssignmentParticipant(state: any, remoteParticipants: Map<string, any>, identifier: string) {
+    if (!identifier) {
+        return undefined;
+    }
+
+    // Exact participant-id match (also covers a DID used directly as the endpoint id).
+    if (remoteParticipants.has(identifier)) {
+        return identifier;
+    }
+
+    // DIDs are case-SENSITIVE (base58 multibase), so they get their own exact
+    // match against the participant's JWT identity (jwtId = JWT context.user.id,
+    // which is a DID once Layer-B identity is minted — see
+    // doc/breakout-jmjmj-identity.md). A DID never falls through to the
+    // case-insensitive name/email matching below.
+    if (identifier.startsWith('did:')) {
+        for (const [ id, p ] of remoteParticipants) {
+            if (p?.jwtId === identifier) {
+                return id;
+            }
+        }
+
+        return undefined;
+    }
+
+    const lower = identifier.toLowerCase();
+
+    for (const [ id, p ] of remoteParticipants) {
+        if (id === identifier
+                || p?.email?.toLowerCase() === lower
+                || p?.name?.toLowerCase() === lower) {
+            return id;
+        }
+    }
+
+    // Match by JID resource as fallback (full JID looks like room@conf/abc — abc === id).
+    const conference = state['features/base/conference']?.conference;
+
+    if (conference) {
+        for (const p of conference.getParticipants() || []) {
+            if (p.getJid?.()?.endsWith(`/${identifier}`)) {
+                return p.getId?.();
+            }
+        }
+    }
+
+    return undefined;
 }
 
 /**

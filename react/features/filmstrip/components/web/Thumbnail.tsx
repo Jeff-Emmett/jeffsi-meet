@@ -429,6 +429,7 @@ class Thumbnail extends Component<IProps, IState> {
         this._clearDoubleClickTimeout = this._clearDoubleClickTimeout.bind(this);
         this._onCanPlay = this._onCanPlay.bind(this);
         this._onClick = this._onClick.bind(this);
+        this._onPinClick = this._onPinClick.bind(this);
         this._onTogglePinButtonKeyDown = this._onTogglePinButtonKeyDown.bind(this);
         this._onFocus = this._onFocus.bind(this);
         this._onBlur = this._onBlur.bind(this);
@@ -734,9 +735,31 @@ class Thumbnail extends Component<IProps, IState> {
     /**
      * On click handler.
      *
+     * Rspace policy (TASK-RMEETS-UI-POLISH): clicking the thumbnail body
+     * is a no-op. Pinning is triggered from the three-dot menu ("Pin to
+     * stage") in the corner of every tile. Body click was causing accidental
+     * fullscreen-on-tap; the explicit menu item makes the gesture deliberate.
+     *
+     * Keyboard pin path (`_onTogglePinButtonKeyDown` → `_onPinClick`)
+     * preserves a11y; this handler stays bound for focus/blur/hover but
+     * does not dispatch.
+     *
      * @returns {void}
      */
     _onClick() {
+        // intentionally empty
+    }
+
+    /**
+     * Pin/unpin handler invoked by the keyboard a11y path. Adds the
+     * participant to the stage filmstrip when it's active, otherwise falls
+     * back to the classic single large-video pin.
+     *
+     * @param {React.MouseEvent | React.KeyboardEvent} [e] - The triggering event.
+     * @returns {void}
+     */
+    _onPinClick(e?: React.MouseEvent | React.KeyboardEvent) {
+        e?.stopPropagation?.();
         const { _participant, dispatch, _stageFilmstripLayout } = this.props;
         const { id, pinned } = _participant;
 
@@ -755,7 +778,7 @@ class Thumbnail extends Component<IProps, IState> {
      */
     _onTogglePinButtonKeyDown(event: KeyboardEvent) {
         if (event.key === 'Enter' || event.key === ' ') {
-            this._onClick();
+            this._onPinClick();
         }
     }
 
@@ -1148,8 +1171,9 @@ class Thumbnail extends Component<IProps, IState> {
                 ) }
                 ref = { this.containerRef }
                 style = { styles.thumbnail }>
-                {/* this "button" is invisible, only here so that
-                keyboard/screen reader users can pin/unpin */}
+                {/* Pinning now lives in the three-dot menu (Pin to stage).
+                    This invisible button preserves the keyboard/screen-reader
+                    pin affordance without a visible star cluttering every tile. */}
                 <Tooltip
                     content = { pinButtonLabel }>
                     <span

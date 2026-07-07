@@ -24,6 +24,8 @@ else
 	WEBPACK_DEV_SERVER = ./node_modules/.bin/webpack serve --mode development --progress
 endif
 
+.PHONY: all compile clean deploy dev source-package deploy-init deploy-appbundle deploy-lib-jitsi-meet deploy-olm deploy-tf-wasm deploy-rnnoise-binary deploy-tflite deploy-excalidraw deploy-excalidraw-dev deploy-meet-models deploy-face-landmarks deploy-css deploy-local
+
 all: compile deploy
 
 compile: clean

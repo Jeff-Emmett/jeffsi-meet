@@ -203,6 +203,15 @@ export interface IConfig {
     brandingDataUrl?: string;
     brandingRoomAlias?: string;
     breakoutRooms?: {
+        allowSelfSelect?: boolean;
+        autoRecord?: boolean;
+        envelopeHint?: {
+            audience?: string[];
+            computeTier?: string;
+            jurisdiction?: string;
+            retention?: string;
+            sensitivity?: string;
+        };
         hideAddRoomButton?: boolean;
         hideAutoAssignButton?: boolean;
         hideJoinRoomButton?: boolean;

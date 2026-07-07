@@ -753,6 +753,9 @@ var config = {
     // Setting this to null, will also disable showing the remote videos
     // when the toolbar is shown on mouse movements
     // disable1On1Mode: null | false | true,
+    // rspace policy: keep all participants visible, never auto-collapse to a single
+    // remote when there are only 2 participants in the call.
+    disable1On1Mode: true,
 
     // Default local name to be displayed
     // defaultLocalDisplayName: 'me',
@@ -896,21 +899,13 @@ var config = {
     // ],
 
     // Holds values related to toolbar visibility control.
-    // toolbarConfig: {
-    //     // Moved from interfaceConfig.INITIAL_TOOLBAR_TIMEOUT
-    //     // The initial number of milliseconds for the toolbar buttons to be visible on screen.
-    //     initialTimeout: 20000,
-    //     // Moved from interfaceConfig.TOOLBAR_TIMEOUT
-    //     // Number of milliseconds for the toolbar buttons to be visible on screen.
-    //     timeout: 4000,
-    //     // Moved from interfaceConfig.TOOLBAR_ALWAYS_VISIBLE
-    //     // Whether toolbar should be always visible or should hide after x milliseconds.
-    //     alwaysVisible: false,
-    //     // Indicates whether the toolbar should still autohide when chat is open
-    //     autoHideWhileChatIsOpen: false,
-    //     // Default background color for the main toolbar. Accepts any valid CSS color.
-    //     // backgroundColor: '#ffffff',
-    // },
+    // rspace policy: 5s auto-hide after no interaction, 20s initial visibility.
+    toolbarConfig: {
+        initialTimeout: 20000,
+        timeout: 5000,
+        alwaysVisible: false,
+        autoHideWhileChatIsOpen: false,
+    },
 
     // Overrides the buttons displayed in the main toolbar. Depending on the screen size the number of displayed
     // buttons varies from 2 buttons to 8 buttons. Every array in the mainToolbarButtons array will replace the
@@ -1448,6 +1443,26 @@ var config = {
     //     hideAutoAssignButton: false,
     //     // Hides the join breakout room button.
     //     hideJoinRoomButton: false,
+    //     // When set to `false`, hides the join button for non-moderators so
+    //     // only moderators can assign participants to rooms (Zoom-style).
+    //     // Defaults to `true` (matches Jitsi's existing self-select behaviour).
+    //     allowSelfSelect: true,
+    //     // When `true`, recording starts automatically as participants enter
+    //     // a breakout room. The local participant must have permission to
+    //     // record. See also `envelopeHint` below for routing recordings to
+    //     // an audience-restricted store.
+    //     autoRecord: false,
+    //     // JMM holon-envelope hint forwarded to the recording service so
+    //     // breakout recordings land in an audience-restricted store rather
+    //     // than the default public bucket. Read by embedders consuming the
+    //     // `recording-status-changed` and `breakout-room-created` iframe
+    //     // events. Schema:
+    //     //   { sensitivity: 'public' | 'metadata-only' | 'encrypted'
+    //     //                 | 'zk-attested' | 'tee-bound',
+    //     //     audience: string[],   // DIDs or ['*']
+    //     //     retention: 'ephemeral' | 'session' | 'persistent' | 'permanent',
+    //     //     jurisdiction?: string }
+    //     envelopeHint: undefined,
     // },
 
     // When true, virtual background feature will be disabled.

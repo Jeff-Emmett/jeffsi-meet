@@ -16,13 +16,17 @@ import {
 } from '../../../../../breakout-rooms/functions';
 import { IRoom } from '../../../../../breakout-rooms/types';
 
+import { AskForHelpButton } from './AskForHelpButton';
 import { AutoAssignButton } from './AutoAssignButton';
+import { BreakoutTimerControls } from './BreakoutTimerControls';
+import { BroadcastButton } from './BroadcastButton';
 import { CollapsibleRoom } from './CollapsibleRoom';
 import JoinActionButton from './JoinQuickActionButton';
 import { LeaveButton } from './LeaveButton';
 import RoomActionEllipsis from './RoomActionEllipsis';
 import { RoomContextMenu } from './RoomContextMenu';
 import { RoomParticipantContextMenu } from './RoomParticipantContextMenu';
+import { ShuffleButton } from './ShuffleButton';
 
 interface IProps {
 
@@ -50,7 +54,12 @@ export const RoomList = ({ searchString }: IProps) => {
     const inBreakoutRoom = useSelector(isInBreakoutRoom);
     const isLocalModerator = useSelector(isLocalParticipantModerator);
     const showAutoAssign = useSelector(isAutoAssignParticipantsVisible);
-    const { hideJoinRoomButton } = useSelector(getBreakoutRoomsConfig);
+    const { allowSelfSelect, hideJoinRoomButton } = useSelector(getBreakoutRoomsConfig);
+
+    // Self-select is allowed by default (matches Jitsi's existing behaviour).
+    // Setting `breakoutRooms.allowSelfSelect: false` hides the join button
+    // for non-moderators — Zoom-style moderator-only assignment.
+    const canSelfSelect = isLocalModerator || allowSelfSelect !== false;
     const [ lowerMenu, raiseMenu, toggleMenu, menuEnter, menuLeave, raiseContext ] = useContextMenu<IRoom>();
     const [ lowerParticipantMenu, raiseParticipantMenu, toggleParticipantMenu,
         participantMenuEnter, participantMenuLeave, raiseParticipantContext ] = useContextMenu<{
@@ -70,7 +79,13 @@ export const RoomList = ({ searchString }: IProps) => {
     return (
         <>
             {inBreakoutRoom && <LeaveButton className = { classes.topMargin } />}
+            {inBreakoutRoom && <AskForHelpButton className = { classes.topMargin } />}
             {showAutoAssign && <AutoAssignButton className = { classes.topMargin } />}
+            {isLocalModerator && rooms.length > 0
+                && <ShuffleButton className = { classes.topMargin } />}
+            {isLocalModerator && rooms.length > 0
+                && <BroadcastButton className = { classes.topMargin } />}
+            <BreakoutTimerControls className = { classes.topMargin } />
             <div
                 aria-label = { t('breakoutRooms.breakoutList', 'breakout list') }
                 className = { classes.topMargin }
@@ -87,7 +102,7 @@ export const RoomList = ({ searchString }: IProps) => {
                             searchString = { searchString }
                             toggleParticipantMenu = { toggleParticipantMenu }>
                             {!isMobileBrowser() && <>
-                                {!hideJoinRoomButton && <JoinActionButton room = { room } />}
+                                {!hideJoinRoomButton && canSelfSelect && <JoinActionButton room = { room } />}
                                 {isLocalModerator && !room.isMainRoom
                                     && <RoomActionEllipsis onClick = { toggleMenu(room) } />}
                             </>}

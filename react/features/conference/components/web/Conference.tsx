@@ -28,7 +28,7 @@ import ParticipantsPane from '../../../participants-pane/components/web/Particip
 import Prejoin from '../../../prejoin/components/web/Prejoin';
 import { isPrejoinPageVisible } from '../../../prejoin/functions.web';
 import ReactionAnimations from '../../../reactions/components/web/ReactionsAnimations';
-import { fullScreenChanged, hideToolbox, showToolbox } from '../../../toolbox/actions.web';
+import { fullScreenChanged, showToolbox } from '../../../toolbox/actions.web';
 import JitsiPortal from '../../../toolbox/components/web/JitsiPortal';
 import Toolbox from '../../../toolbox/components/web/Toolbox';
 import { toggleTileView } from '../../../video-layout/actions.any';
@@ -59,6 +59,19 @@ const FULL_SCREEN_EVENTS = [
     'mozfullscreenchange',
     'fullscreenchange'
 ];
+
+/**
+ * Returns whether the device is touch-capable. Catches tablets that report as
+ * desktop — notably iPadOS Safari, which masquerades as macOS, so
+ * {@link isMobileBrowser} is false for it. Used to enable touch-first toolbar
+ * affordances (initial show-on-join, swipe hint) on tablets too.
+ *
+ * @returns {boolean}
+ */
+function isTouchCapable() {
+    return (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0)
+        || (typeof window !== 'undefined' && 'ontouchstart' in window);
+}
 
 /**
  * The type of the React {@code Component} props of {@link Conference}.
@@ -188,6 +201,16 @@ class Conference extends AbstractConference<IProps, any> {
     override componentDidMount() {
         document.title = `${this.props._roomName} | ${interfaceConfig.APP_NAME}`;
         this._start();
+
+        // Show the toolbox on join for touch devices so controls are
+        // discoverable; it auto-hides after toolbarConfig.initialTimeout (~20s),
+        // after which tap-to-reveal (see _onVideospaceTouchEnd) takes over.
+        // Covers phones (isMobileBrowser) and tablets that report as desktop
+        // (isTouchCapable, e.g. iPadOS). Restores intent of commit c193435,
+        // which was lost in a later merge.
+        if (isMobileBrowser() || isTouchCapable()) {
+            this.props.dispatch(showToolbox());
+        }
     }
 
     /**
@@ -220,6 +243,8 @@ class Conference extends AbstractConference<IProps, any> {
 
         FULL_SCREEN_EVENTS.forEach(name =>
             document.removeEventListener(name, this._onFullScreenChange));
+
+        document.removeEventListener('keydown', this._onShowToolbar);
 
         APP.conference.isJoined() && this.props.dispatch(hangup());
     }
@@ -302,7 +327,7 @@ class Conference extends AbstractConference<IProps, any> {
                                 <MainFilmstrip />
                             </>)
                         }
-                        { isMobileBrowser() && (
+                        { (isMobileBrowser() || isTouchCapable()) && (
                             <div className = 'layout-indicator'>
                                 <div
                                     className = { `layout-indicator-dot ${
@@ -421,12 +446,9 @@ class Conference extends AbstractConference<IProps, any> {
             return;
         }
 
-        // Short tap: <300ms, <10px movement. Show with auto-hide timeout if
-        // currently hidden; hide immediately if currently visible.
+        // Short tap: show toolbar and arm the auto-hide timer (same as desktop mouse-move).
         if (elapsed < 300 && absDx < 10 && absDy < 10) {
-            const visible = APP.store.getState()['features/toolbox'].visible;
-
-            this.props.dispatch(visible ? hideToolbox(true) : showToolbox());
+            this.props.dispatch(showToolbox());
         }
     }
 
@@ -497,6 +519,12 @@ class Conference extends AbstractConference<IProps, any> {
 
         FULL_SCREEN_EVENTS.forEach(name =>
             document.addEventListener(name, this._onFullScreenChange));
+
+        // Reveal the auto-hidden toolbar on any keyboard activity, matching the
+        // mouse-move (desktop) and touch (mobile) reveal paths. rspace UX: the
+        // toolbar hides after inactivity and pops back on mouse, touch OR key.
+        // `_onShowToolbar` is throttled in the constructor.
+        document.addEventListener('keydown', this._onShowToolbar);
 
         const { dispatch, t } = this.props;
 

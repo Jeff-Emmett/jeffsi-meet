@@ -4,7 +4,6 @@ import { batch, connect } from 'react-redux';
 import { makeStyles } from 'tss-react/mui';
 
 import { IReduxState, IStore } from '../../../app/types';
-import { isMobileBrowser } from '../../../base/environment/utils';
 import { IconDotsHorizontal } from '../../../base/icons/svg';
 import { getLocalParticipant, getParticipantById } from '../../../base/participants/functions';
 import { IParticipant } from '../../../base/participants/types';
@@ -199,7 +198,7 @@ const RemoteVideoMenuTriggerButton = ({
             position = { _menuPosition }
             visible = { Boolean(popoverVisible) }>
             {buttonVisible && !_disabled && (
-                !isMobileBrowser() && <Button
+                <Button
                     accessibilityLabel = { t('dialog.remoteUserControls', { username }) }
                     className = { classes.triggerButton }
                     icon = { IconDotsHorizontal }

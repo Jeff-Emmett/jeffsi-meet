@@ -60,12 +60,18 @@ import {
     isLocalTrackMuted
 } from '../../react/features/base/tracks/functions';
 import {
+    applyBreakoutAssignments,
     autoAssignToBreakoutRooms,
+    broadcastToBreakoutRooms,
+    clearBreakoutTimer,
     closeBreakoutRoom,
     createBreakoutRoom,
     moveToRoom,
     removeBreakoutRoom,
-    sendParticipantToRoom
+    requestBreakoutHelp,
+    sendParticipantToRoom,
+    setBreakoutTimer,
+    shuffleBreakoutRooms
 } from '../../react/features/breakout-rooms/actions';
 import { getBreakoutRooms, getRoomsInfo } from '../../react/features/breakout-rooms/functions';
 import {
@@ -205,6 +211,54 @@ function initCommands() {
                 return;
             }
             APP.store.dispatch(autoAssignToBreakoutRooms());
+        },
+        'breakout-broadcast': message => {
+            if (!isLocalParticipantModerator(APP.store.getState())) {
+                logger.error('Missing moderator rights to broadcast to breakout rooms');
+
+                return;
+            }
+            APP.store.dispatch(broadcastToBreakoutRooms(message));
+        },
+        'breakout-clear-timer': () => {
+            if (!isLocalParticipantModerator(APP.store.getState())) {
+                logger.error('Missing moderator rights to clear the breakout timer');
+
+                return;
+            }
+            APP.store.dispatch(clearBreakoutTimer());
+        },
+        'breakout-request-help': () => {
+            APP.store.dispatch(requestBreakoutHelp());
+        },
+        'breakout-set-timer': durationMs => {
+            if (!isLocalParticipantModerator(APP.store.getState())) {
+                logger.error('Missing moderator rights to set the breakout timer');
+
+                return;
+            }
+            APP.store.dispatch(setBreakoutTimer(Number(durationMs) || 0));
+        },
+        'breakout-shuffle': () => {
+            if (!isLocalParticipantModerator(APP.store.getState())) {
+                logger.error('Missing moderator rights to shuffle breakout rooms');
+
+                return;
+            }
+            APP.store.dispatch(shuffleBreakoutRooms());
+        },
+        'apply-breakout-assignments': assignments => {
+            if (!isLocalParticipantModerator(APP.store.getState())) {
+                logger.error('Missing moderator rights to apply breakout assignments');
+
+                return;
+            }
+            if (!assignments || typeof assignments !== 'object') {
+                logger.error('apply-breakout-assignments: invalid payload');
+
+                return;
+            }
+            APP.store.dispatch(applyBreakoutAssignments(assignments));
         },
         'grant-moderator': participantId => {
             if (!isLocalParticipantModerator(APP.store.getState())) {
@@ -2225,6 +2279,99 @@ class API {
         this._sendEvent({
             name: 'breakout-rooms-updated',
             rooms
+        });
+    }
+
+    /**
+     * Notify external application that a breakout room was created.
+     *
+     * @param {Object} room - { roomId, jid, name, isMainRoom }.
+     * @returns {void}
+     */
+    notifyBreakoutRoomCreated(room) {
+        this._sendEvent({
+            name: 'breakout-room-created',
+            ...room
+        });
+    }
+
+    /**
+     * Notify external application that a breakout room was removed.
+     *
+     * @param {Object} room - { roomId, jid, name }.
+     * @returns {void}
+     */
+    notifyBreakoutRoomRemoved(room) {
+        this._sendEvent({
+            name: 'breakout-room-removed',
+            ...room
+        });
+    }
+
+    /**
+     * Notify external application that the local participant joined a breakout room.
+     * Fires for both breakout rooms and the main room (with isMainRoom=true).
+     *
+     * @param {Object} room - { roomId, jid, name, isMainRoom }.
+     * @returns {void}
+     */
+    notifyBreakoutRoomJoined(room) {
+        this._sendEvent({
+            name: 'breakout-room-joined',
+            ...room
+        });
+    }
+
+    /**
+     * Notify external application that the local participant left a breakout room.
+     *
+     * @param {Object} room - { roomId, jid, name, isMainRoom }.
+     * @returns {void}
+     */
+    notifyBreakoutRoomLeft(room) {
+        this._sendEvent({
+            name: 'breakout-room-left',
+            ...room
+        });
+    }
+
+    /**
+     * Notify external application that a participant requested help from a breakout room.
+     *
+     * @param {Object} payload - { roomId, jid, name, participantId, participantName }.
+     * @returns {void}
+     */
+    notifyBreakoutRoomHelpRequested(payload) {
+        this._sendEvent({
+            name: 'breakout-room-help-requested',
+            ...payload
+        });
+    }
+
+    /**
+     * Notify external application of a moderator broadcast across all breakout rooms.
+     *
+     * @param {Object} payload - { message, senderId, senderName, timestamp }.
+     * @returns {void}
+     */
+    notifyBreakoutBroadcast(payload) {
+        this._sendEvent({
+            name: 'breakout-broadcast-received',
+            ...payload
+        });
+    }
+
+    /**
+     * Notify external application that the breakout-room timer state changed.
+     *
+     * @param {Object} payload - { endTimestamp, durationMs }.
+     *   endTimestamp = null means timer cleared.
+     * @returns {void}
+     */
+    notifyBreakoutTimerUpdated(payload) {
+        this._sendEvent({
+            name: 'breakout-timer-updated',
+            ...payload
         });
     }
 
