@@ -35,9 +35,9 @@ most of the value with no conference-server change.
 
 | | Layer A — rMeets orchestration | Layer B — crypto identity at Prosody |
 |---|---|---|
-| Where | rspace-online rMeets (JS) + `envelopeHint` | Prosody JWT/token auth + `muc_breakout_rooms` |
+| Where | rspace-online rMeets (JS) + `envelopeHint` | Prosody EncryptID-capability auth + `muc_breakout_rooms` |
 | Enforced by | rMeets + Morpheus (encryption-at-rest) | Prosody (server-side join/affiliation) |
-| Jitsi/Prosody change | none | JWT auth, key mgmt, module changes |
+| Jitsi/Prosody change | none | `mod_auth_encryptid` (EdDSA/did:key), module changes |
 | Trust model | rMeets is trusted to assign correctly | server *verifies* the DID claim |
 | Cost | low | high |
 
@@ -112,18 +112,38 @@ membership).
    differs in `jurisdiction`/`retention`/`computeTier`; Morpheus routes per
    room (EU→TEE/`session`, public→plaintext/`permanent`).
 
-## Layer B — cryptographic identity at Prosody
+## Layer B — cryptographic identity at Prosody (pure EncryptID keys)
 
-1. rMeets **mints a Jitsi JWT** from the EncryptID session carrying
-   `context.user.id = DID`, a `did` claim, moderator flag, and room + audience
-   claims; forwarded via `JitsiMeetExternalAPI`'s `jwt` option.
-2. Prosody **token auth** verifies the JWT (app-secret or ASAP keyserver);
-   jicofo/JVB aligned; anonymous localvibe stays behind a config flag.
-3. jeffsi-meet reads the **verified** DID from `base/jwt` and feeds the matcher.
+**No separate JWT key.** We do *not* introduce a JAAS app-secret or ASAP RSA
+keyserver — that would be a second key hierarchy alongside EncryptID's Ed25519
+`did:key`s. Instead we keep the JWT *envelope* (so lib-jitsi-meet/Prosody consume
+it unmodified) but sign it with an **EncryptID Ed25519 key** (`alg: EdDSA`), and
+the `kid` **is** the signer's `did:key` — self-describing, so Prosody resolves
+the public key with the same `decodeDidKeyEd25519` used by the KEM (`.5`) and
+intent signing (`.6`). One key type everywhere.
+
+The token is a **capability, not a self-asserted identity**: it's signed by the
+meeting *authority* (host DID / rMeets service DID) attesting "DID X may join
+room R as role Y until T" — rspace's existing capability model
+(`shared/capability/signature.ts` `signCP`/`verifyCPSignatureFromDID`).
+
+1. rMeets **mints an EdDSA capability token** with the meeting-authority
+   EncryptID key: header `{alg:EdDSA, kid:<authority did:key>}`, claims
+   `{iss:<authorityDID>, sub:<userDID>, room, context.user.id=<userDID>,
+   moderator, exp, nbf}`. Forwarded via `JitsiMeetExternalAPI`'s `jwt` option.
+2. Prosody **`mod_auth_encryptid`** verifies: `decodeDidKeyEd25519(kid)` →
+   authority pubkey → EdDSA verify → `iss` trusted for the room's space
+   (`space-membership`) → room/exp checks. Recommended impl: a **verifier
+   sidecar** delegating to an rspace HTTP endpoint that reuses the TS
+   `verifyCPSignatureFromDID`/`decodeDidKeyEd25519` (DRY; shared with `.7`),
+   not a parallel Lua reimplementation. Anonymous localvibe stays behind a flag.
+3. jeffsi-meet reads the **verified** DID from `base/jwt` (`context.user.id` →
+   `participant.jwtId`) and feeds the matcher. `validateJwt` must be relaxed to
+   accept `EdDSA`+`did:key` (Prosody is authoritative).
 4. `muc_breakout_rooms` **enforces membership**: deny join unless the
    participant DID is in the room audience/allowlist (moderator override).
-5. **Verified moderator** affiliation derives from the JWT claim; fan-out and
-   moderator UI actions require a verified-moderator DID.
+5. **Verified moderator** affiliation derives from the capability's `moderator`
+   claim; fan-out and moderator UI actions require a verified-moderator DID.
 
 ## Threat model (what Layer B buys, and what it doesn't)
 
@@ -140,9 +160,9 @@ membership).
 
 - jeffsi-meet: `react/features/base/config/configType.ts` — `breakoutRooms`
   (`allowSelfSelect`, `autoRecord`, `envelopeHint`); `react/features/base/jwt/`.
-- rMeets: `modules/rmeets/mod.ts` (`meetingAudienceTokens`, JWT mint, envelope),
+- rMeets: `modules/rmeets/mod.ts` (`meetingAudienceTokens`, capability-token mint, envelope),
   `modules/rmeets/components/folk-jitsi-room.ts` (breakout attributes, events).
-- Prosody: token auth + `muc_breakout_rooms` join/affiliation enforcement.
+- Prosody: `mod_auth_encryptid` (EdDSA/did:key capability) + `muc_breakout_rooms` join/affiliation enforcement.
 
 ## Related
 
