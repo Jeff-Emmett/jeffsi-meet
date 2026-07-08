@@ -67,6 +67,22 @@ function Util.new(module)
     self.signatureAlgorithm = module:get_option_string("signature_algorithm");
     self.allowEmptyToken = module:get_option_boolean("allow_empty_token");
 
+    -- TASK-470.9: static EdDSA verification key (pure EncryptID / did:key
+    -- capability tokens — no ASAP keyserver, no app-secret). The kid IS the
+    -- signer's did:key; the pubkey PEM configured here is derived from it
+    -- once at deploy time (see doc/breakout-prosody-encryptid.md). Mirrors the
+    -- existing ASAPKeyPath static-file-load pattern above.
+    self.encryptidPubKeyPath = module:get_option_string("encryptid_pubkey_path");
+    if self.encryptidPubKeyPath then
+        local f = io.open(self.encryptidPubKeyPath, 'r');
+        if f then
+            self.encryptidPubKey = f:read('*all');
+            f:close();
+        else
+            module:log("error", "encryptid_pubkey_path set but file could not be opened: %s", self.encryptidPubKeyPath);
+        end
+    end
+
     self.cache = require"util.cache".new(cacheSize);
 
     --[[
@@ -112,8 +128,8 @@ function Util.new(module)
         return nil;
     end
 
-    if self.appSecret == nil and self.asapKeyServer == nil and self.cacheKeysUrl == nil then
-        module:log("error", "'app_secret', 'asap_key_server or 'cacheKeysUrl' must be specified");
+    if self.appSecret == nil and self.asapKeyServer == nil and self.cacheKeysUrl == nil and self.encryptidPubKey == nil then
+        module:log("error", "'app_secret', 'asap_key_server', 'cacheKeysUrl' or 'encryptid_pubkey_path' must be specified");
         return nil;
     end
 
@@ -123,6 +139,8 @@ function Util.new(module)
             self.signatureAlgorithm = "RS256"
         elseif self.appSecret ~= nil then
             self.signatureAlgorithm = "HS256"
+        elseif self.encryptidPubKey ~= nil then
+            self.signatureAlgorithm = "EdDSA"
         end
     end
 
@@ -275,6 +293,22 @@ function Util:process_and_verify_token(session)
         -- We're using an public key stored in the session
         -- module:log("debug","Public key was found on the session");
         key = session.public_key;
+    elseif self.encryptidPubKey ~= nil and session.auth_token ~= nil then
+        -- TASK-470.9: pure EncryptID / did:key capability token. One static
+        -- configured verification key per vhost (the rMeets service identity's
+        -- pubkey) — no per-token keyserver lookup, no 'kid' fetch. Still
+        -- validate the token actually declares alg=EdDSA so a stray RS/HS
+        -- token isn't silently checked against the wrong key type.
+        local dotFirst = session.auth_token:find("%.");
+        if not dotFirst then return false, "not-allowed", "Invalid token" end
+        local header, err = json_safe.decode(basexx.from_url64(session.auth_token:sub(1,dotFirst-1)));
+        if err then
+            return false, "not-allowed", "bad token format";
+        end
+        if header["alg"] ~= "EdDSA" then
+            return false, "not-allowed", "encryptid_pubkey_path configured but token alg is not EdDSA";
+        end
+        key = self.encryptidPubKey;
     elseif (self.asapKeyServer or self.cacheKeysUrl) and session.auth_token ~= nil then
         -- We're fetching an public key from an ASAP server
         local dotFirst = session.auth_token:find("%.");

@@ -35,28 +35,95 @@ local function verifyRS (data, signature, key, algo)
 	return pubkey:verify(signature, datadigest)
 end
 
--- Signs data with an Ed25519 (EdDSA) private key. Ed25519 signs the message
--- directly — no pre-hash digest object, unlike RS* — so the raw signing-input
--- string is passed straight to pkey:sign(). rspace EncryptID (TASK-470.9):
--- the meeting-authority capability token is signed with the service's Ed25519
--- key; Prosody verifies against the corresponding did:key public key.
--- NB: requires a luaossl built against OpenSSL 1.1.1+ (Ed25519). ADDITIVE — the
--- HS*/RS* paths are unchanged; EdDSA is used only for tokens declaring alg=EdDSA.
+-- Ed25519 (EdDSA) sign/verify — shells out to the system `openssl` CLI rather
+-- than luaossl's `pkey:sign`/`pkey:verify` (TASK-470.9, rspace EncryptID pure
+-- did:key capability tokens; see doc/breakout-prosody-encryptid.md). Confirmed
+-- empirically in a staging container that the `lua-luaossl` build bundled with
+-- `jitsi/prosody:stable` only implements the legacy incremental-hash EVP API
+-- (EVP_DigestUpdate/EVP_VerifyFinal), and OpenSSL rejects that API for pure
+-- Ed25519/Ed448 keys — they require the one-shot EVP_DigestSign/EVP_DigestVerify
+-- calls this luaossl binding never exposes:
+--   pkey:verify(sig, rawString)               -> "EVP_MD_CTX* expected, got string"
+--   pkey:verify(sig, digest.new():update(d))  -> "operation not supported for this keytype"
+-- `openssl pkeyutl -rawin` DOES support one-shot Ed25519 verify. This is only
+-- on the (low-frequency) auth/join path, not any hot signaling path, so a
+-- subprocess per call is negligible — and it needs no custom Prosody image.
+--
+-- Data/signature/key material is written to private (0600), per-call temp
+-- files rather than passed via argv, so nothing sensitive appears in `ps`.
+-- `signEdDSA` is NOT exercised by any current Prosody call site (rMeets, not
+-- Prosody, mints EdDSA tokens — see jitsi-capability-token.ts); implemented
+-- here only for symmetry with `verifyEdDSA` and local testing.
+
+local function write_private_temp_file(data)
+	local name = os.tmpname()
+	local f = io.open(name, 'wb')
+	if not f then return nil end
+	f:write(data)
+	f:close()
+	os.execute('chmod 600 ' .. name .. ' 2>/dev/null')
+	return name
+end
+
+local function read_temp_file(name)
+	local f = io.open(name, 'rb')
+	if not f then return nil end
+	local content = f:read('*all')
+	f:close()
+	return content
+end
+
+-- POSIX shell single-quote escaping — used even though our interpolated
+-- values are always os.tmpname()-generated paths (never user-controlled),
+-- so this is defense-in-depth rather than a load-bearing sanitizer.
+local function shell_quote(s)
+	return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
+end
+
+-- Runs `cmd`, returning true iff the subprocess exited 0 — normalizes the
+-- Lua-5.1-vs-5.2+ `os.execute` return shape (raw integer vs `true/nil, ..., code`).
+local function shell_ok(cmd)
+	local a, b, c = os.execute(cmd)
+	if type(a) == 'number' then return a == 0 end -- Lua 5.1
+	return a == true and b == 'exit' and c == 0
+end
+
 local function signEdDSA (data, key)
-	local privkey = pkey.new(key)
-	if privkey == nil then
-		return nil, 'Not a private PEM key'
+	local dataFile = write_private_temp_file(data)
+	local keyFile = write_private_temp_file(key)
+	local sigFile = os.tmpname()
+	if not dataFile or not keyFile then
+		if dataFile then os.remove(dataFile) end
+		if keyFile then os.remove(keyFile) end
+		return nil, 'could not write temp files for signing'
 	end
-	return privkey:sign(data)
+	local ok = shell_ok('openssl pkeyutl -sign -rawin -in ' .. shell_quote(dataFile)
+		.. ' -inkey ' .. shell_quote(keyFile) .. ' -out ' .. shell_quote(sigFile)
+		.. ' >/dev/null 2>&1')
+	local sig = ok and read_temp_file(sigFile) or nil
+	os.remove(dataFile); os.remove(keyFile); os.remove(sigFile)
+	if not sig then
+		return nil, 'openssl pkeyutl -sign failed'
+	end
+	return sig
 end
 
 -- Verifies an Ed25519 (EdDSA) signature. Pass the raw signing input (no digest).
 local function verifyEdDSA (data, signature, key)
-	local pubkey = pkey.new(key)
-	if pubkey == nil then
+	local dataFile = write_private_temp_file(data)
+	local sigFile = write_private_temp_file(signature)
+	local keyFile = write_private_temp_file(key) -- public key; "private" perms is just belt-and-suspenders
+	if not dataFile or not sigFile or not keyFile then
+		if dataFile then os.remove(dataFile) end
+		if sigFile then os.remove(sigFile) end
+		if keyFile then os.remove(keyFile) end
 		return false
 	end
-	return pubkey:verify(signature, data)
+	local ok = shell_ok('openssl pkeyutl -verify -rawin -in ' .. shell_quote(dataFile)
+		.. ' -sigfile ' .. shell_quote(sigFile) .. ' -pubin -inkey ' .. shell_quote(keyFile)
+		.. ' >/dev/null 2>&1')
+	os.remove(dataFile); os.remove(sigFile); os.remove(keyFile)
+	return ok
 end
 
 local alg_sign = {
