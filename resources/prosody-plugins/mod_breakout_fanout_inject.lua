@@ -18,7 +18,30 @@
 --
 -- curl http://127.0.0.1:{port}/breakout-fanout-inject \
 --   -d '{"targets":[{"roomJid":"room1@conference.example.com","payload":{"type":"breakout-broadcast","message":"back in 2"}}]}' \
---   -H "content-type: application/json" -H "authorization: Bearer {token}"
+--   -H "content-type: application/json" -H "authorization: Bearer {token}" \
+--   -H "x-breakout-dedupe-key: {sig}"
+--
+-- TASK-470.7 AC3 (idempotent + late joiners get the current timer):
+--   - Idempotency: rMeets signs each intent with deterministic EdDSA, so a
+--     client retry (network timeout, double-click) re-POSTs the IDENTICAL
+--     signature as `x-breakout-dedupe-key` (see rspace-online
+--     breakout-fanout.ts's `FanoutDecision.dedupeKey` doc comment). A key
+--     seen within `DEDUPE_TTL_SEC` is treated as a repeat: every target for
+--     that request is counted as `skipped`, nothing is (re-)broadcast.
+--   - Late-joiner timer: whenever an injected payload is a
+--     `breakout-timer-update`, its `{endTimestamp, durationMs}` is
+--     remembered per room jid (cleared on `endTimestamp == nil`, i.e. the
+--     client's clear-timer payload) in a `module:shared` table. The actual
+--     unicast-on-join lives in `mod_muc_breakout_late_joiner_timer.lua` —
+--     THIS module is only ever loaded on the `meet.jitsi` VirtualHost
+--     (`XMPP_MODULES`) for its HTTP endpoint, which is a different host than
+--     the MUC components (`XMPP_MUC_MODULES`/`XMPP_BREAKOUT_MUC_MODULES`)
+--     `muc-occupant-joined` actually fires on — a `module:hook` for that
+--     event here would silently never run (found empirically: staging-tested
+--     via a real hand-rolled client join, no unicast ever arrived, root-caused
+--     to this exact host mismatch rather than assumed working from code
+--     review alone). `module:shared(...)` is what lets the two module
+--     instances, loaded on different hosts, see the same timer state.
 
 local util = module:require "util";
 local token_util = module:require "token/util".new(module);
@@ -35,6 +58,70 @@ local asapKeyServer = module:get_option_string("prosody_password_public_key_repo
 
 if asapKeyServer then
     token_util:set_asap_key_server(asapKeyServer)
+end
+
+-- Dedup window: a little wider than rMeets' own 60s intent-freshness window
+-- (breakout-fanout.ts isIntentFresh maxAgeMs) so any client retry inside
+-- that freshness window is guaranteed to still be recognised here.
+local DEDUPE_TTL_SEC = 90;
+-- recently_injected[dedupe_key] = os.time() when last seen. Not shared: only
+-- this HTTP-handling instance ever writes/reads it.
+local recently_injected = {};
+-- current_timers[room_jid] = { endTimestamp = <ms>, durationMs = <ms>, payload = <table> }.
+-- SHARED (not `local`) with mod_muc_breakout_late_joiner_timer.lua, which is
+-- loaded on the MUC component hosts and does the actual unicast-on-join —
+-- see the file-level doc comment for why this can't be one module/one hook.
+-- The "/*/" prefix requests Prosody's GLOBAL (cross-host) shared-table scope
+-- — a bare key (no leading slash) is scoped to only the CURRENT host, which
+-- would silently give this module and mod_muc_breakout_late_joiner_timer.lua
+-- (a different host) two independent, never-synced tables. Found empirically
+-- (debug logging showed `remember_timer` writing the key here while the
+-- other module's `known_keys` read back consistently empty) after fixing the
+-- host-mismatch bug once already wasn't enough on its own.
+local current_timers = module:shared("/*/breakout_fanout_inject/current_timers");
+
+local function prune_recently_injected(now)
+    for key, seen_at in pairs(recently_injected) do
+        if now - seen_at > DEDUPE_TTL_SEC then
+            recently_injected[key] = nil;
+        end
+    end
+end
+
+-- Returns true (and records the key) exactly once per DEDUPE_TTL_SEC window;
+-- a nil/empty key never dedupes (fail-open to "always inject" rather than
+-- silently dropping an unkeyed request).
+local function claim_dedupe_key(dedupe_key)
+    if not dedupe_key or dedupe_key == "" then
+        return true;
+    end
+
+    local now = os.time();
+    prune_recently_injected(now);
+
+    if recently_injected[dedupe_key] then
+        return false;
+    end
+    recently_injected[dedupe_key] = now;
+    return true;
+end
+
+-- Remembers (or clears) the current timer for a room from an injected
+-- payload, so a late joiner can be caught up. Only acts on
+-- breakout-timer-update payloads; anything else is left untouched.
+local function remember_timer(room_jid, payload)
+    if payload.type ~= "breakout-timer-update" then
+        return;
+    end
+    if payload.endTimestamp == nil or payload.endTimestamp == json.null then
+        current_timers[room_jid] = nil;
+        return;
+    end
+    current_timers[room_jid] = {
+        endTimestamp = payload.endTimestamp;
+        durationMs = payload.durationMs;
+        payload = payload;
+    };
 end
 
 function verify_token(token)
@@ -113,6 +200,27 @@ function handle_breakout_fanout_inject(event)
     local injected = 0;
     local skipped = 0;
 
+    -- Idempotency (TASK-470.7 AC3): a repeated dedupe key within the TTL
+    -- window skips every target for this request outright — no partial
+    -- re-injection, no re-arming of the late-joiner timer state either
+    -- (remember_timer only runs on a claimed, non-duplicate request).
+    -- Prosody's HTTP request.headers normalizes hyphenated header names to
+    -- underscored field names (matches this file's own `content_type` access
+    -- for the "Content-Type" header above) -- a bracket lookup with the
+    -- literal hyphenated string returns nil.
+    local dedupe_key = request.headers.x_breakout_dedupe_key;
+    local is_duplicate = not claim_dedupe_key(dedupe_key);
+
+    if is_duplicate then
+        module:log("info", "breakout-fanout-inject: duplicate dedupe key %s, skipping %d target(s)",
+            tostring(dedupe_key), #body.targets);
+        return {
+            status_code = 200;
+            headers = { content_type = "application/json" };
+            body = json.encode({ injected = 0; skipped = #body.targets; deduped = true });
+        };
+    end
+
     for _, target in ipairs(body.targets) do
         local room_jid = target.roomJid;
         local payload = target.payload;
@@ -135,6 +243,7 @@ function handle_breakout_fanout_inject(event)
                     skipped = skipped + 1;
                 else
                     broadcast_to_room(room, json_msg);
+                    remember_timer(room_jid, payload);
                     injected = injected + 1;
                 end
             end
