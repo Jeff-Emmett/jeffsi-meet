@@ -55,13 +55,23 @@ end
 -- Prosody, mints EdDSA tokens — see jitsi-capability-token.ts); implemented
 -- here only for symmetry with `verifyEdDSA` and local testing.
 
+-- Security review finding: chmod AFTER write leaves a brief window where the
+-- file is created with the process umask's default perms before being
+-- restricted. Fixed by creating the file empty and chmod'ing it BEFORE any
+-- content is written, shrinking that window to nothing. (verifyEdDSA's inputs
+-- are message/signature/PUBLIC key — none secret — so the practical exposure
+-- was already low; this closes it regardless.)
 local function write_private_temp_file(data)
 	local name = os.tmpname()
+	local touch = io.open(name, 'w')
+	if not touch then return nil end
+	touch:close()
+	os.execute('chmod 600 ' .. name .. ' 2>/dev/null')
+
 	local f = io.open(name, 'wb')
-	if not f then return nil end
+	if not f then os.remove(name); return nil end
 	f:write(data)
 	f:close()
-	os.execute('chmod 600 ' .. name .. ' 2>/dev/null')
 	return name
 end
 
