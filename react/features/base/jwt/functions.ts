@@ -140,11 +140,29 @@ export function validateJwt(jwt: string) {
             nbf,
             sub
         } = payload;
+        const { alg, kid } = header;
+
+        // EncryptID / did:key capability tokens (TASK-470.8/.9, see
+        // doc/breakout-jmjmj-identity.md and doc/breakout-prosody-encryptid.md):
+        // these are signed with an EncryptID Ed25519 key (`alg: EdDSA`) and carry
+        // the signer's `did:key:...` as the verification-key reference in `iss`
+        // (mirrored in `kid`) instead of an ASAP keyserver `kid`. There is no
+        // `sub`-vs-`kid` shape to check and no keyserver lookup client-side —
+        // Prosody (`mod_auth_encryptid`) is authoritative for signature
+        // verification; this is UX validation only. Skip the ASAP-style checks
+        // below for these tokens and instead just sanity-check the did:key shape.
+        const isEdDsaCapabilityToken = alg === 'EdDSA';
+
+        if (isEdDsaCapabilityToken) {
+            const didKeyReference = iss?.startsWith('did:key:') ? iss : kid;
+
+            if (!didKeyReference?.startsWith('did:key:')) {
+                errors.push({ key: JWT_VALIDATION_ERRORS.ISS_INVALID });
+            }
+        }
 
         // JaaS only
-        if (sub?.startsWith('vpaas-magic-cookie')) {
-            const { kid } = header;
-
+        if (!isEdDsaCapabilityToken && sub?.startsWith('vpaas-magic-cookie')) {
             // if Key ID is missing, we return the error immediately without further validations.
             if (!kid) {
                 errors.push({ key: JWT_VALIDATION_ERRORS.KID_NOT_FOUND });
