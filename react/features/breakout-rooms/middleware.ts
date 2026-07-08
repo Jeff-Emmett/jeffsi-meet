@@ -85,6 +85,17 @@ function _maybeAutoRecord(getState: () => any) {
     const roomId = conference.getName?.();
     const breakoutRoomsState = state[FEATURE_KEY]?.rooms ?? {};
     const room = breakoutRoomsState[roomId];
+
+    // Unambiguous parent-room reference, straight from lib-jitsi-meet's
+    // BreakoutRooms#getMainRoomJid() (populated from the MUC's
+    // muc#roominfo_breakout_main_room disco#info field). Only set while
+    // actually inside a breakout room — undefined in the main room, or if
+    // the server hasn't surfaced it yet. Lets the backend (rspace-online)
+    // match a breakout recording to its parent meeting by JID instead of
+    // the ambiguous room-name string, which can collide across concurrent
+    // meetings in the same space.
+    const parentRoomJid: string | undefined = conference.getBreakoutRooms?.()?.getMainRoomJid?.() || undefined;
+
     const appData = {
         file_recording_metadata: {
             share: false,
@@ -102,12 +113,14 @@ function _maybeAutoRecord(getState: () => any) {
                 roomId: room.id,
                 name: room.name,
                 jid: room.jid,
-                isBreakout: !room.isMainRoom
+                isBreakout: !room.isMainRoom,
+                ...(parentRoomJid ? { parentRoomJid } : {})
             } : {
                 roomId,
                 name: '',
                 jid: '',
-                isBreakout: inBreakout
+                isBreakout: inBreakout,
+                ...(parentRoomJid ? { parentRoomJid } : {})
             }
         }
     };
