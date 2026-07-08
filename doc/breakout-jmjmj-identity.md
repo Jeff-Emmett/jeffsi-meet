@@ -164,6 +164,30 @@ room R as role Y until T" — rspace's existing capability model
   `modules/rmeets/components/folk-jitsi-room.ts` (breakout attributes, events).
 - Prosody: `mod_auth_encryptid` (EdDSA/did:key capability) + `muc_breakout_rooms` join/affiliation enforcement.
 
+## Signed moderator intent — wire format (TASK-470.6)
+
+Moderator broadcast/help/timer intents fan out across breakout MUCs
+server-side (Jitsi has no native cross-MUC delivery — see
+`doc/breakout-rooms-integration.md`), so an unsigned intent's `senderId` is
+just untrusted client metadata. `rspace-online`'s
+`modules/rmeets/breakout-intent-sign.ts` signs/verifies these with the
+moderator's Ed25519 `did:key` before the fan-out (`.7`) will inject anything.
+
+- **Shape**: any intent payload object plus two reserved fields —
+  `senderDid` (the moderator's `did:key:z...`) and `sig` (base64 Ed25519
+  signature, 64 bytes decoded). Caller-supplied `senderDid`/`sig` on the input
+  payload are stripped before signing so they can't shadow the real ones.
+- **Signed bytes**: canonical JSON — object keys recursively sorted,
+  `undefined` entries dropped, no whitespace — of the payload **with**
+  `senderDid` merged in and `sig` absent. Binding `senderDid` into the signed
+  bytes means a valid signature can't be replayed under a different sender.
+- **Verification** (`verifyBreakoutIntent`): rejects (status `'unverified'`,
+  with reason) a missing `senderDid`, missing/non-string/malformed-base64/
+  wrong-length `sig`, a `senderDid` that isn't an Ed25519 `did:key`, or a
+  signature that doesn't match; only an `ed25519.verify` pass over the same
+  canonical-bytes recipe returns `{ status: 'verified', signerDid }`. The
+  fan-out (`.7`) refuses to inject anything that isn't `verified`.
+
 ## Related
 
 - `TASK-470` (epic) and its Phase children in `rspace-online` backlog.
