@@ -127,7 +127,11 @@ export function getVirtualBackgroundTabProps(stateful: IStateful, isDisplayedOnW
  * is enabled, false otherwise.
  */
 export function isSettingEnabled(settingName: string) {
-    return interfaceConfig.SETTINGS_SECTIONS.includes(settingName);
+    // Defensive: a deployment/embedder that doesn't set SETTINGS_SECTIONS
+    // (or serves a stale interface_config.js missing it) must not crash the
+    // whole app on first render of anything that calls this (e.g. opening the
+    // participants pane) — found via live E2E testing, TASK-470.1.
+    return Boolean(interfaceConfig.SETTINGS_SECTIONS?.includes(settingName));
 }
 
 
