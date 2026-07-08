@@ -108,7 +108,7 @@ const mapStateToProps = (state: IReduxState) => {
     return {
         _defaultLocalDisplayName: defaultLocalDisplayName ?? '',
         _localParticipant: getLocalParticipant(state),
-        _unclickable: !interfaceConfig.SETTINGS_SECTIONS.includes('profile'),
+        _unclickable: !interfaceConfig.SETTINGS_SECTIONS?.includes('profile'),
         customClass: 'profile-button-avatar'
     };
 };
