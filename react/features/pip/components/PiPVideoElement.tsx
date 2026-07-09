@@ -1,19 +1,13 @@
 import React, { useEffect, useRef } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { makeStyles } from 'tss-react/mui';
 
-import { IReduxState, IStore } from '../../app/types';
+import { IStore } from '../../app/types';
 import { getAvatarFont, getAvatarInitialsColor } from '../../base/avatar/components/web/styles';
-import { getLocalParticipant, getParticipantDisplayName } from '../../base/participants/functions';
-import { isTrackStreamingStatusActive } from '../../connection-indicator/functions';
 import { getDisplayNameColor } from '../../display-name/components/web/styles';
 import { getThumbnailBackgroundColor } from '../../filmstrip/functions.web';
-import { getLargeVideoParticipant } from '../../large-video/functions';
-import { isPrejoinPageVisible } from '../../prejoin/functions.any';
 import { handlePiPLeaveEvent, handlePipEnterEvent, handleWindowBlur, handleWindowFocus } from '../actions';
-import { getPiPVideoTrack } from '../functions';
-import { useCanvasAvatar } from '../hooks';
-import logger from '../logger';
+import { useCanvasAvatar, usePiPParticipantAndTrack, usePiPTrackAttachment } from '../hooks';
 
 const useStyles = makeStyles()(() => {
     return {
@@ -39,28 +33,8 @@ const useStyles = makeStyles()(() => {
 const PiPVideoElement: React.FC = () => {
     const { classes, theme } = useStyles();
     const videoRef = useRef<HTMLVideoElement>(null);
-    const previousTrackRef = useRef<any>(null);
 
-    // Redux selectors.
-    const isOnPrejoin = useSelector(isPrejoinPageVisible);
-    const localParticipant = useSelector(getLocalParticipant);
-    const largeVideoParticipant = useSelector(getLargeVideoParticipant);
-
-    // Use local participant during prejoin, otherwise large video participant.
-    const participant = isOnPrejoin ? localParticipant : largeVideoParticipant;
-
-    // Get appropriate video track based on prejoin state.
-    const videoTrack = useSelector((state: IReduxState) =>
-        getPiPVideoTrack(state, participant)
-    );
-    const displayName = useSelector((state: IReduxState) =>
-        participant?.id
-            ? getParticipantDisplayName(state, participant.id)
-            : ''
-    );
-    const customAvatarBackgrounds = useSelector((state: IReduxState) =>
-        state['features/dynamic-branding']?.avatarBackgrounds || []
-    );
+    const { customAvatarBackgrounds, displayName, participant, shouldShowAvatar, videoTrack } = usePiPParticipantAndTrack();
 
     const dispatch: IStore['dispatch'] = useDispatch();
     const avatarFont = getAvatarFont(theme);
@@ -77,62 +51,8 @@ const PiPVideoElement: React.FC = () => {
         displayNameColor
     });
 
-    // Determine if we should show avatar instead of video.
-    const shouldShowAvatar = !videoTrack
-        || videoTrack.muted
-        || (!videoTrack.local && !isTrackStreamingStatusActive(videoTrack));
-
-    /**
-     * Effect: Handle switching between real video track and canvas avatar stream.
-     */
-    useEffect(() => {
-        const videoElement = videoRef.current;
-
-        if (!videoElement) {
-            return;
-        }
-
-        const previousTrack = previousTrackRef.current;
-
-        // Detach previous track.
-        if (previousTrack?.jitsiTrack) {
-            try {
-                previousTrack.jitsiTrack.detach(videoElement);
-            } catch (error) {
-                logger.error('Error detaching previous track:', error);
-            }
-        }
-
-        if (shouldShowAvatar) {
-            // Use canvas stream for avatar.
-            // Access ref inside effect - stream is created in useCanvasAvatar's effect.
-            const canvasStream = canvasStreamRef.current;
-
-            // Only set srcObject if it's different to avoid interrupting playback.
-            if (canvasStream && videoElement.srcObject !== canvasStream) {
-                videoElement.srcObject = canvasStream;
-            }
-        } else if (videoTrack?.jitsiTrack) {
-            // Attach real video track.
-            videoTrack.jitsiTrack.attach(videoElement)
-                .catch((error: Error) => {
-                    logger.error('Error attaching video track:', error);
-                });
-        }
-
-        previousTrackRef.current = videoTrack;
-
-        // Cleanup on unmount or track change.
-        return () => {
-            if (videoTrack?.jitsiTrack && videoElement) {
-                try {
-                    videoTrack.jitsiTrack.detach(videoElement);
-                } catch (error) {
-                    logger.error('Error during cleanup:', error);
-                }
-            }
-        };
-    }, [ videoTrack, shouldShowAvatar ]);
+    // Attach/detach the real video track or canvas avatar stream to the video element.
+    usePiPTrackAttachment(videoRef, videoTrack, shouldShowAvatar, canvasStreamRef);
 
     /**
      * Effect: Window blur/focus and visibility change listeners.
@@ -222,6 +142,14 @@ const PiPVideoElement: React.FC = () => {
     return (
         <video
             autoPlay = { true }
+
+            // @ts-ignore - autopictureinpicture is not yet in React's DOM typings; must be
+            // lowercase (or React emits an unrecognized literal attribute name) and a
+            // string (React doesn't know it's boolean, so a JS `true` renders wrong).
+            // eslint-plugin-react doesn't know this newer attribute and wrongly suggests
+            // camelCase, which breaks it at runtime (confirmed via manual testing).
+            // eslint-disable-next-line react/no-unknown-property
+            autopictureinpicture = 'true'
             className = { classes.hiddenVideo }
             id = 'pipVideo'
             muted = { true }

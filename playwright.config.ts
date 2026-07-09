@@ -5,7 +5,7 @@ export default defineConfig({
     timeout: 30000,
     retries: 0,
     use: {
-        baseURL: 'https://meet.jeffemmett.com',
+        baseURL: process.env.BASE_URL || 'https://meet.jeffemmett.com',
         ignoreHTTPSErrors: true,
         screenshot: 'on',
         video: 'retain-on-failure'
@@ -23,6 +23,20 @@ export default defineConfig({
             use: {
                 ...devices['iPhone 14'],
                 permissions: ['camera', 'microphone']
+            }
+        },
+        {
+            name: 'Desktop Chrome',
+            use: {
+                ...devices['Desktop Chrome'],
+                permissions: [ 'camera', 'microphone' ],
+                launchOptions: {
+                    args: [
+                        '--use-fake-ui-for-media-stream',
+                        '--use-fake-device-for-media-stream',
+                        '--auto-select-desktop-capture-source=Your Entire screen'
+                    ]
+                }
             }
         }
     ]

@@ -273,6 +273,108 @@ export async function renderAvatarOnCanvas(
 }
 
 /**
+ * Checks if the Document Picture-in-Picture API is supported.
+ *
+ * @returns {boolean} - True if the browser supports Document PiP.
+ */
+export function isDocumentPiPSupported(): boolean {
+    return 'documentPictureInPicture' in window;
+}
+
+/**
+ * The currently open Document PiP window, if any. Kept out of Redux since
+ * Window objects aren't serializable.
+ */
+let documentPiPWindow: Window | null = null;
+
+/**
+ * In-flight open request, if any. `blur` and `visibilitychange` can both
+ * fire synchronously for a single tab switch, and Redux state doesn't
+ * update until this resolves - without this guard both handlers would race
+ * past the (still-false) `isDocumentPiPActive` check and each open their
+ * own window.
+ */
+let openDocumentPiPWindowPromise: Promise<Window> | null = null;
+
+/**
+ * Returns the currently open Document PiP window, if any.
+ *
+ * @returns {Window | null} The open Document PiP window or null.
+ */
+export function getDocumentPiPWindow(): Window | null {
+    return documentPiPWindow;
+}
+
+/**
+ * Clones the main document's stylesheets (both linked and inline) into the
+ * Document PiP window so portaled content renders with the app's styles.
+ *
+ * @param {Document} targetDocument - The Document PiP window's document.
+ * @returns {void}
+ */
+function copyStylesInto(targetDocument: Document) {
+    for (const styleSheet of Array.from(document.styleSheets)) {
+        const ownerNode = styleSheet.ownerNode;
+
+        if (!(ownerNode instanceof HTMLElement)) {
+            continue;
+        }
+
+        targetDocument.head.appendChild(ownerNode.cloneNode(true));
+    }
+}
+
+/**
+ * Opens a Document Picture-in-Picture window and copies the app's styles
+ * into it. The caller is responsible for portaling content into
+ * {@code window.document.body}.
+ *
+ * @param {number} width - Initial window width.
+ * @param {number} height - Initial window height.
+ * @returns {Promise<Window>} The opened Document PiP window.
+ */
+export async function openDocumentPiPWindow(width = 400, height = 320): Promise<Window> {
+    if (documentPiPWindow) {
+        return documentPiPWindow;
+    }
+
+    if (openDocumentPiPWindowPromise) {
+        return openDocumentPiPWindowPromise;
+    }
+
+    openDocumentPiPWindowPromise = (async () => {
+        // @ts-ignore - documentPictureInPicture is not yet in TypeScript's lib definitions.
+        const pipWindow: Window = await window.documentPictureInPicture.requestWindow({ width,
+            height });
+
+        copyStylesInto(pipWindow.document);
+        documentPiPWindow = pipWindow;
+
+        pipWindow.addEventListener('pagehide', () => {
+            documentPiPWindow = null;
+        }, { once: true });
+
+        return pipWindow;
+    })();
+
+    try {
+        return await openDocumentPiPWindowPromise;
+    } finally {
+        openDocumentPiPWindowPromise = null;
+    }
+}
+
+/**
+ * Closes the currently open Document PiP window, if any.
+ *
+ * @returns {void}
+ */
+export function closeDocumentPiPWindow(): void {
+    documentPiPWindow?.close();
+    documentPiPWindow = null;
+}
+
+/**
  * Requests picture-in-picture mode for the pip video element.
  *
  * NOTE: Called by Electron main process with userGesture: true.
@@ -355,10 +457,15 @@ export function enterPiP(videoElement: HTMLVideoElement | undefined | null) {
             return;
         }
 
-        // TODO: Enable PiP for browsers:
-        // In browsers, we should directly call requestPictureInPicture.
+        // In browsers, call requestPictureInPicture directly (has transient
+        // activation in most cases coming from a recent in-call interaction;
+        // browsers that support the `autopictureinpicture` attribute will
+        // also auto-invoke this without any script call as a guaranteed
+        // fallback).
         // @ts-ignore - requestPictureInPicture is not yet in all TypeScript definitions.
-        // requestPictureInPicture();
+        videoElement.requestPictureInPicture().catch((err: Error) => {
+            logger.warn(`requestPictureInPicture failed, relying on autopictureinpicture fallback: ${err.message}`);
+        });
     } catch (error) {
         logger.error('Error entering Picture-in-Picture:', error);
     }

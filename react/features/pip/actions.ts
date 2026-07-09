@@ -4,10 +4,13 @@ import { isLocalTrackMuted } from '../base/tracks/functions.any';
 import { handleToggleVideoMuted } from '../toolbox/actions.any';
 import { muteLocal } from '../video-menu/actions.any';
 
-import { SET_PIP_ACTIVE } from './actionTypes';
+import { SET_DOCUMENT_PIP_ACTIVE, SET_DOCUMENT_PIP_MINIMIZED, SET_PIP_ACTIVE } from './actionTypes';
 import {
     cleanupMediaSessionHandlers,
+    closeDocumentPiPWindow,
     enterPiP,
+    isDocumentPiPSupported,
+    openDocumentPiPWindow,
     setupMediaSessionHandlers,
     shouldShowPiP
 } from './functions';
@@ -26,6 +29,90 @@ export function setPiPActive(isPiPActive: boolean) {
     return {
         type: SET_PIP_ACTIVE,
         isPiPActive
+    };
+}
+
+/**
+ * Action to set Document Picture-in-Picture active state.
+ *
+ * @param {boolean} isDocumentPiPActive - Whether Document PiP is active.
+ * @returns {{
+ *     type: SET_DOCUMENT_PIP_ACTIVE,
+ *     isDocumentPiPActive: boolean
+ * }}
+ */
+export function setDocumentPiPActive(isDocumentPiPActive: boolean) {
+    return {
+        type: SET_DOCUMENT_PIP_ACTIVE,
+        isDocumentPiPActive
+    };
+}
+
+/**
+ * Action to set whether the Document Picture-in-Picture window is collapsed
+ * to a video-only view.
+ *
+ * @param {boolean} isDocumentPiPMinimized - Whether the popout is minimized.
+ * @returns {{
+ *     type: SET_DOCUMENT_PIP_MINIMIZED,
+ *     isDocumentPiPMinimized: boolean
+ * }}
+ */
+export function setDocumentPiPMinimized(isDocumentPiPMinimized: boolean) {
+    return {
+        type: SET_DOCUMENT_PIP_MINIMIZED,
+        isDocumentPiPMinimized
+    };
+}
+
+/**
+ * Toggles the minimized (video-only) state of the Document PiP window.
+ *
+ * @returns {Function}
+ */
+export function toggleDocumentPiPMinimized() {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        const isMinimized = getState()['features/pip']?.isDocumentPiPMinimized;
+
+        dispatch(setDocumentPiPMinimized(!isMinimized));
+    };
+}
+
+/**
+ * Action to enter Document Picture-in-Picture mode. Rejects if the window
+ * fails to open (unsupported browser, no transient activation, etc.) so
+ * callers can fall back to classic video PiP.
+ *
+ * @returns {Function}
+ */
+export function enterDocumentPiP() {
+    return async (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        if (getState()['features/pip']?.isDocumentPiPActive) {
+            return;
+        }
+
+        await openDocumentPiPWindow();
+        dispatch(setDocumentPiPActive(true));
+    };
+}
+
+/**
+ * Action to exit Document Picture-in-Picture mode. Idempotent - closing the
+ * window itself triggers its own 'pagehide' listener (see
+ * DocumentPiPContent), so this can legitimately be dispatched twice for one
+ * exit (e.g. the header button closing the window, then the resulting
+ * pagehide event firing this again).
+ *
+ * @returns {Function}
+ */
+export function exitDocumentPiP() {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+        if (!getState()['features/pip']?.isDocumentPiPActive) {
+            return;
+        }
+
+        closeDocumentPiPWindow();
+        dispatch(setDocumentPiPActive(false));
     };
 }
 
@@ -91,13 +178,28 @@ export function exitPiP() {
  * @returns {Function}
  */
 export function handleWindowBlur(videoElement: HTMLVideoElement) {
-    return (_dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
         const state = getState();
         const isPiPActive = state['features/pip']?.isPiPActive;
+        const isDocumentPiPActive = state['features/pip']?.isDocumentPiPActive;
 
-        if (!isPiPActive) {
-            enterPiP(videoElement);
+        if (isPiPActive || isDocumentPiPActive) {
+            return;
         }
+
+        if (isDocumentPiPSupported()) {
+            // Tier 1: custom popout window. Requires transient activation,
+            // which may not always be available at blur time - fall back to
+            // the guaranteed Tier 2 (classic video PiP) if it throws.
+            dispatch(enterDocumentPiP()).catch((err: Error) => {
+                logger.warn(`Document PiP unavailable, falling back to video PiP: ${err.message}`);
+                enterPiP(videoElement);
+            });
+
+            return;
+        }
+
+        enterPiP(videoElement);
     };
 }
 

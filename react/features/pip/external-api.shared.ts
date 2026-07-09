@@ -17,6 +17,26 @@ function isElectron(): boolean {
 }
 
 /**
+ * Checks if the Document Picture-in-Picture API is supported.
+ * Inline check with no imports to keep external_api.min.js slim.
+ *
+ * @returns {boolean} - True if the browser supports Document PiP.
+ */
+function isDocumentPiPSupported(): boolean {
+    return 'documentPictureInPicture' in window;
+}
+
+/**
+ * Checks if classic (video-element) Picture-in-Picture is supported.
+ * Inline check with no imports to keep external_api.min.js slim.
+ *
+ * @returns {boolean} - True if the browser supports video-element PiP.
+ */
+function isVideoPiPSupported(): boolean {
+    return 'pictureInPictureEnabled' in document && Boolean((document as any).pictureInPictureEnabled);
+}
+
+/**
  * Checks if PiP is enabled based on config and environment.
  *
  * @param {Object} pipConfig - The pip config object.
@@ -27,5 +47,5 @@ export function isPiPEnabled(pipConfig?: { disabled?: boolean; }): boolean {
         return false;
     }
 
-    return isElectron();
+    return isElectron() || isDocumentPiPSupported() || isVideoPiPSupported();
 }
