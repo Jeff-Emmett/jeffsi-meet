@@ -6,9 +6,19 @@
 -- computes the delivery PLAN: which breakout-room MUCs should receive the
 -- payload. Jitsi/Prosody has no native cross-MUC delivery, so this module is
 -- the last-mile bridge: rMeets POSTs the already-verified plan here, and this
--- module actually broadcasts the payload into each target room as a
--- room-wide `json-message` — the same wire format the breakout-rooms client
--- code already listens for (see doc/breakout-rooms-integration.md).
+-- module actually delivers the payload as a `json-message` -- the same wire
+-- format the breakout-rooms client code already listens for (see
+-- doc/breakout-rooms-integration.md).
+--
+-- A target's `roomJid` is EITHER a MUC room jid (broadcast/timer -> every
+-- occupant, AC1 "broadcast delivered to every breakout MUC") OR an
+-- individual moderator's own full jid (help-request -> that one person only,
+-- AC1 "help to moderator JIDs only" -- planBreakoutFanout in rspace-online's
+-- breakout-fanout.ts addresses help-request targets to `ctx.moderatorJids`,
+-- not a room). `get_room_from_jid` distinguishes the two for us for free: it
+-- only resolves an actual MUC-component jid, so a person's jid on the main
+-- VirtualHost correctly returns nil and falls through to a direct send
+-- (`send_direct`) instead of the room-wide broadcast (`broadcast_to_room`).
 --
 -- This endpoint is a trusted rMeets->Prosody bridge and MUST be
 -- network-isolated (bound to localhost / an internal network only) in any
@@ -140,6 +150,21 @@ function verify_token(token)
     return true;
 end
 
+-- Sends `json_msg` directly to a single JID -- used for help-request targets
+-- (TASK-470.7 AC1 "help to moderator JIDs only"), which planBreakoutFanout
+-- (rspace-online breakout-fanout.ts) addresses to the specific moderator's
+-- own JID in the main room, NOT a MUC room jid. Without this, help-request
+-- targets would hit the SAME code path as broadcast/timer -- get_room_from_jid
+-- would (correctly) fail to resolve a person's jid as a room, and the target
+-- would silently count as "skipped", never delivered.
+local function send_direct(jid, json_msg)
+    local stanza = st.message({ from = module.host, to = jid })
+        :tag('json-message', { xmlns = 'http://jitsi.org/jitmeet' })
+        :text(json_msg)
+        :up();
+    module:send(stanza);
+end
+
 -- Broadcasts `payload` (already-encoded JSON string) as a room-wide
 -- json-message to every occupant of `room` — mirrors the exact pattern
 -- mod_filesharing_component.lua already uses for room-wide event broadcast:
@@ -229,23 +254,30 @@ function handle_breakout_fanout_inject(event)
             module:log("warn", "breakout-fanout-inject: target missing roomJid/payload, skipping");
             skipped = skipped + 1;
         else
-            local room = get_room_from_jid(room_jid);
+            local json_msg, encode_err = json.encode(payload);
 
-            if not room then
-                module:log("warn", "breakout-fanout-inject: room %s not found, skipping", room_jid);
+            if not json_msg then
+                module:log("error", "breakout-fanout-inject: payload encode failed for %s: %s",
+                    room_jid, tostring(encode_err));
                 skipped = skipped + 1;
             else
-                local json_msg, encode_err = json.encode(payload);
+                local room = get_room_from_jid(room_jid);
 
-                if not json_msg then
-                    module:log("error", "breakout-fanout-inject: payload encode failed for %s: %s",
-                        room_jid, tostring(encode_err));
-                    skipped = skipped + 1;
-                else
+                if room then
                     broadcast_to_room(room, json_msg);
                     remember_timer(room_jid, payload);
-                    injected = injected + 1;
+                else
+                    -- Not a MUC room -- a help-request target (an individual
+                    -- moderator jid), or a room that genuinely doesn't exist.
+                    -- Either way, a direct single-recipient send is the
+                    -- correct behavior (see send_direct's doc comment); there
+                    -- is no reliable way to distinguish "unknown jid type"
+                    -- from "room not found" here, and failing open to a
+                    -- best-effort direct send is strictly better than
+                    -- silently dropping every help-request.
+                    send_direct(room_jid, json_msg);
                 end
+                injected = injected + 1;
             end
         end
     end
