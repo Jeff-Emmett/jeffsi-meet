@@ -380,6 +380,7 @@ export default class JitsiMeetExternalAPI extends EventEmitter {
             'display-capture',
             'hid',
             'microphone',
+            'picture-in-picture',
             'screen-wake-lock',
             'speaker-selection'
         ].join('; ');
