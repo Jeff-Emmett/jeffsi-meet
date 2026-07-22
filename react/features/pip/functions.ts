@@ -2,6 +2,7 @@ import { IReduxState, IStore } from '../app/types';
 import { AVATAR_DEFAULT_BACKGROUND_COLOR } from '../base/avatar/components/web/styles';
 import { getAvatarColor, getInitials } from '../base/avatar/functions';
 import { leaveConference } from '../base/conference/actions';
+import { isMobileBrowser } from '../base/environment/utils';
 import { browser } from '../base/lib-jitsi-meet';
 import { IParticipant } from '../base/participants/types';
 import { getLocalVideoTrack } from '../base/tracks/functions.any';
@@ -41,6 +42,18 @@ export function shouldShowPiP(state: IReduxState): boolean {
 
     // Check if PiP is enabled at all.
     if (!isPiPEnabled(pipConfig)) {
+        return false;
+    }
+
+    // Never mount the auto pop-out PiP on mobile web browsers. It is a
+    // desktop tab-switch feature (Document PiP is desktop-Chromium only), but
+    // on mobile the global window `blur`/`visibilitychange` listeners in
+    // PiPVideoElement fire on ordinary in-page interactions - most visibly
+    // opening the fullscreen chat modal, which pops the tab into native PiP
+    // and registers a MediaSession `hangup` handler that leaves the
+    // conference (users get "booted" from the room). Audio continuity while
+    // the tab is backgrounded is handled independently by background-audio.web.
+    if (isMobileBrowser()) {
         return false;
     }
 
