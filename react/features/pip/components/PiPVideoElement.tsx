@@ -55,8 +55,19 @@ const PiPVideoElement: React.FC = () => {
     usePiPTrackAttachment(videoRef, videoTrack, shouldShowAvatar, canvasStreamRef);
 
     /**
-     * Effect: Window blur/focus and visibility change listeners.
-     * Enters PiP on blur, exits on focus (matches old AOT behavior).
+     * Effect: Auto Picture-in-Picture entry + focus-to-exit.
+     *
+     * Entry is driven by the MediaSession 'enterpictureinpicture' action, NOT
+     * by a 'blur'/'visibilitychange' listener. This is deliberate:
+     * documentPictureInPicture.requestWindow() (and video.requestPictureInPicture())
+     * require transient user activation, which a plain blur/visibility handler
+     * does NOT have - so calling them there always rejected and silently fell
+     * back to the bare classic video PiP (no controls), which is exactly the
+     * "popout doesn't open properly" bug. The browser fires the
+     * 'enterpictureinpicture' action WITH implicit transient activation when the
+     * user switches away from the tab while capturing camera/mic, which is the
+     * only reliable way to open Document PiP on tab switch (see
+     * https://developer.chrome.com/blog/automatic-picture-in-picture).
      */
     useEffect(() => {
         const videoElement = videoRef.current;
@@ -65,7 +76,6 @@ const PiPVideoElement: React.FC = () => {
             return;
         }
 
-        const onWindowBlur = () => dispatch(handleWindowBlur(videoElement));
         const onWindowFocus = () => {
 
             // In the use case where the PiP is closed by the 'X' or 'back to main window' buttons, this handler is
@@ -78,37 +88,42 @@ const PiPVideoElement: React.FC = () => {
                 dispatch(handleWindowFocus());
             }, 100);
         };
-        const onVisibilityChange = () => {
-            if (document.hidden) {
-                onWindowBlur();
-            }
-        };
 
-        window.addEventListener('blur', onWindowBlur);
         window.addEventListener('focus', onWindowFocus);
-        document.addEventListener('visibilitychange', onVisibilityChange);
 
-        // Check if window is already blurred on mount (handles PiP enable while app is in background).
-        // Wait for video to be ready before attempting PiP (canvas stream may not be attached yet).
-        const checkFocusAndEnterPiP = () => {
-            if (!document.hasFocus()) {
-                onWindowBlur();
+        // Register the browser Auto-PiP entry point. Runs with transient
+        // activation, so handleWindowBlur's requestWindow()/requestPictureInPicture()
+        // calls succeed. Falls back to the autopictureinpicture attribute on the
+        // <video> below when the browser doesn't support this action.
+        let enterPiPActionRegistered = false;
+
+        if ('mediaSession' in navigator && navigator.mediaSession?.setActionHandler) {
+            try {
+
+                // @ts-ignore - 'enterpictureinpicture' is a newer MediaSession action not yet typed.
+                navigator.mediaSession.setActionHandler('enterpictureinpicture', () => {
+                    dispatch(handleWindowBlur(videoElement));
+                });
+                enterPiPActionRegistered = true;
+            } catch (e) {
+
+                // Action unsupported - the autopictureinpicture attribute is the fallback.
             }
-        };
-
-        if (videoElement.readyState >= 1) {
-            // Video already has metadata loaded (e.g., real video track was already attached).
-            checkFocusAndEnterPiP();
-        } else {
-            // Wait for video source to be ready (e.g., canvas stream being created).
-            videoElement.addEventListener('loadedmetadata', checkFocusAndEnterPiP, { once: true });
         }
 
         return () => {
-            window.removeEventListener('blur', onWindowBlur);
             window.removeEventListener('focus', onWindowFocus);
-            document.removeEventListener('visibilitychange', onVisibilityChange);
-            videoElement.removeEventListener('loadedmetadata', checkFocusAndEnterPiP);
+
+            if (enterPiPActionRegistered) {
+                try {
+
+                    // @ts-ignore - 'enterpictureinpicture' is a newer MediaSession action not yet typed.
+                    navigator.mediaSession.setActionHandler('enterpictureinpicture', null);
+                } catch (e) {
+
+                    // noop
+                }
+            }
         };
     }, [ dispatch ]);
 

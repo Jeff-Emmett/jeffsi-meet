@@ -327,13 +327,27 @@ export function getDocumentPiPWindow(): Window | null {
  */
 function copyStylesInto(targetDocument: Document) {
     for (const styleSheet of Array.from(document.styleSheets)) {
-        const ownerNode = styleSheet.ownerNode;
+        try {
+            // MUI/tss-react inject rules via CSSOM insertRule in production
+            // ("speedy" mode), leaving the <style> element's textContent empty.
+            // cloneNode(true) would copy an empty tag and the popout would render
+            // unstyled, so reconstruct the rules from the live CSSOM instead.
+            const cssText = Array.from(styleSheet.cssRules)
+                .map(rule => rule.cssText)
+                .join('\n');
+            const style = targetDocument.createElement('style');
 
-        if (!(ownerNode instanceof HTMLElement)) {
-            continue;
+            style.textContent = cssText;
+            targetDocument.head.appendChild(style);
+        } catch (e) {
+            // Reading cssRules throws for cross-origin stylesheets. Re-link the
+            // original node (clone) so the PiP window fetches it itself.
+            const ownerNode = styleSheet.ownerNode;
+
+            if (ownerNode instanceof HTMLElement) {
+                targetDocument.head.appendChild(ownerNode.cloneNode(true));
+            }
         }
-
-        targetDocument.head.appendChild(ownerNode.cloneNode(true));
     }
 }
 
