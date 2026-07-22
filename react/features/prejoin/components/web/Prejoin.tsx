@@ -37,6 +37,7 @@ import {
 import logger from '../../logger';
 import { hasDisplayName } from '../../utils';
 
+import PrejoinRoomOccupancy from './PrejoinRoomOccupancy';
 import JoinByPhoneDialog from './dialogs/JoinByPhoneDialog';
 
 interface IProps {
@@ -442,6 +443,8 @@ const Prejoin = ({
                         {t('prejoin.errorMissingName')}
                     </p>
                 </div>}
+
+                <PrejoinRoomOccupancy />
 
                 <div className = { classes.dropdownContainer }>
                     <Popover
