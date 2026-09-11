@@ -31,57 +31,113 @@ import './middleware.any';
 let screenLock: WakeLockSentinel | undefined;
 
 /**
- * Releases the screen lock.
+ * Whether a conference is currently in progress, i.e. whether we should be
+ * holding a screen wake lock at all. Tracked separately from `screenLock`
+ * because the sentinel is legitimately absent for stretches of a live call
+ * (the OS drops it every time the document stops being visible).
+ */
+let wakeLockWanted = false;
+
+/**
+ * Releases the screen lock sentinel, if we hold one.
  *
  * @returns {Promise}
  */
 async function releaseScreenLock() {
-    if (screenLock) {
-        if (!screenLock.released) {
-            logger.debug('Releasing wake lock.');
+    const lock = screenLock;
 
-            try {
-                await screenLock.release();
-            } catch (e) {
-                logger.error(`Error while releasing the screen wake lock: ${e}.`);
-            }
+    if (!lock) {
+        return;
+    }
+
+    screenLock = undefined;
+    lock.removeEventListener('release', onWakeLockReleased);
+
+    if (!lock.released) {
+        logger.debug('Releasing wake lock.');
+
+        try {
+            await lock.release();
+        } catch (e) {
+            logger.error(`Error while releasing the screen wake lock: ${e}.`);
         }
-        screenLock.removeEventListener('release', onWakeLockReleased);
-        screenLock = undefined;
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
     }
 }
 
 /**
- * Requests a new screen wake lock.
+ * Requests a new screen wake lock, if one is wanted and we don't already hold
+ * a live one. Requesting while the document is hidden always rejects, so that
+ * case is skipped rather than burned as a failed attempt.
  *
  * @returns {void}
  */
 function requestWakeLock() {
-    if (navigator.wakeLock?.request) {
-        navigator.wakeLock.request('screen')
-            .then(lock => {
-                screenLock = lock;
-                screenLock.addEventListener('release', onWakeLockReleased);
-                document.addEventListener('visibilitychange', handleVisibilityChange);
-                logger.debug('Wake lock created.');
-            })
-            .catch(e => {
-                logger.error(`Error while requesting wake lock for screen: ${e}`);
-            });
+    if (!wakeLockWanted || !navigator.wakeLock?.request) {
+        return;
     }
+    if (document.visibilityState !== 'visible') {
+        return;
+    }
+    if (screenLock && !screenLock.released) {
+        return;
+    }
+
+    navigator.wakeLock.request('screen')
+        .then(lock => {
+            if (!wakeLockWanted) {
+                lock.release().catch(() => undefined);
+
+                return;
+            }
+            screenLock = lock;
+            lock.addEventListener('release', onWakeLockReleased);
+            logger.debug('Wake lock created.');
+        })
+        .catch(e => {
+            logger.error(`Error while requesting wake lock for screen: ${e}`);
+        });
 }
 
 /**
- * Page visibility change handler that re-requests the wake lock if it has been released by the OS.
+ * Starts holding a screen wake lock for the duration of the conference.
  *
  * @returns {void}
  */
-async function handleVisibilityChange() {
-    if (screenLock?.released && document.visibilityState === 'visible') {
-        // The screen lock have been released by the OS because of document visibility change. Lets try to request the
-        // wake lock again.
-        await releaseScreenLock();
+function startScreenLock() {
+    if (wakeLockWanted) {
+        return;
+    }
+    wakeLockWanted = true;
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    requestWakeLock();
+}
+
+/**
+ * Stops holding a screen wake lock and detaches the visibility listener.
+ *
+ * @returns {Promise}
+ */
+async function stopScreenLock() {
+    wakeLockWanted = false;
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    await releaseScreenLock();
+}
+
+/**
+ * Page visibility change handler that re-takes the wake lock after the OS has
+ * dropped it.
+ *
+ * The OS releases the sentinel every time the document stops being visible, so
+ * the only reliable trigger is "we are visible again — ask for it back". The
+ * previous guard also required a previously-successful sentinel to be present
+ * and released, which meant a single failed request (most obviously: joining
+ * while the tab was in the background, where the API always rejects) gave up
+ * on the wake lock permanently for the rest of the call.
+ *
+ * @returns {void}
+ */
+function handleVisibilityChange() {
+    if (document.visibilityState === 'visible') {
         requestWakeLock();
     }
 }
@@ -110,13 +166,14 @@ MiddlewareRegistry.register(store => next => action => {
             dispatch(setSkipPrejoinOnReload(false));
         }
 
-        requestWakeLock();
+        startScreenLock();
 
         // rspace TASK-RMEETS-UI-POLISH item 6: keep call audio playing
         // when the screen turns off on mobile. Mobile-only no-op on desktop.
         try {
             const roomName = (getState()['features/base/conference'] as any)?.room ?? 'Meeting';
-            require('../../conference/background-audio.web').startBackgroundAudioKeepAlive(roomName);
+
+            require('../../conference/background-audio.web').startBackgroundAudioKeepAlive(roomName, store);
         } catch (e) {
             logger.warn('background-audio start failed', e);
         }
@@ -148,13 +205,13 @@ MiddlewareRegistry.register(store => next => action => {
             dispatch(hangup(true, i18next.t(titlekey) || reason, notifyOnConferenceDestruction));
         }
 
-        releaseScreenLock();
+        stopScreenLock();
 
         break;
     }
     case CONFERENCE_LEFT:
     case KICKED_OUT:
-        releaseScreenLock();
+        stopScreenLock();
 
         // rspace TASK-RMEETS-UI-POLISH item 6: tear down background-audio loop.
         try {
