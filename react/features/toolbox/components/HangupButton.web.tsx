@@ -2,16 +2,16 @@ import { connect } from 'react-redux';
 
 import { createToolbarEvent } from '../../analytics/AnalyticsEvents';
 import { sendAnalytics } from '../../analytics/functions';
-import { openDialog } from '../../base/dialog/actions';
+import { leaveConference } from '../../base/conference/actions';
 import { translate } from '../../base/i18n/functions';
 import { IProps as AbstractButtonProps } from '../../base/toolbox/components/AbstractButton';
 import AbstractHangupButton from '../../base/toolbox/components/AbstractHangupButton';
 
-import LeaveConfirmDialog from './web/LeaveConfirmDialog';
-
 /**
- * Toolbar hangup button that opens a "Leave meeting?" confirm dialog instead of
- * leaving immediately. Confirm by clicking OK or pressing Enter.
+ * Toolbar hangup button. Leaves the conference immediately — the end-call
+ * button is itself the confirmation. This fork previously routed through a
+ * "Leave meeting?" confirm dialog, which made hanging up a two-tap action on
+ * mobile for no benefit, since rejoining is a single tap.
  *
  * @augments AbstractHangupButton
  */
@@ -22,7 +22,7 @@ class HangupButton extends AbstractHangupButton<AbstractButtonProps> {
 
     override _doHangup() {
         sendAnalytics(createToolbarEvent('hangup'));
-        this.props.dispatch(openDialog('LeaveConfirmDialog', LeaveConfirmDialog));
+        this.props.dispatch(leaveConference());
     }
 }
 
