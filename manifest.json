@@ -1,14 +1,7 @@
 {
-  "android_package_name": "org.jitsi.meet",
-  "prefer_related_applications": true,
-  "related_applications": [
-    {
-      "id": "org.jitsi.meet",
-      "platform": "chromeos_play"
-    }
-  ],
-  "short_name": "Jitsi Meet",
-  "name": "Jitsi Meet",
+  "short_name": "Jeffsi Meet",
+  "name": "Jeffsi Meet",
+  "description": "rSpace meetings.",
   "icons": [
     {
       "src": "static/pwa/icons/icon192.png",
@@ -30,7 +23,15 @@
   "start_url": "/",
   "background_color": "#17A0DB",
   "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
+  "orientation": "any",
+  "categories": [
+    "productivity",
+    "social"
+  ],
   "scope": "/",
   "theme_color": "#17A0DB"
- }
- 
+}

@@ -17,6 +17,13 @@ COPY resources/ /usr/share/jitsi-meet/resources/
 COPY *.html /usr/share/jitsi-meet/
 COPY *.js /usr/share/jitsi-meet/
 
+# The base image ships upstream's manifest, which declares
+# prefer_related_applications against org.jitsi.meet - so Chrome suppresses the
+# install prompt and points at the Play Store app instead, and jeffsi can never
+# be installed as a PWA. Ours replaces it; installability is what buys a call
+# its own task in the app switcher and a foreground-grade media session.
+COPY manifest.json /usr/share/jitsi-meet/manifest.json
+
 # Copy config templates
 COPY config.js /defaults/config.js
 COPY interface_config.js /defaults/interface_config.js
