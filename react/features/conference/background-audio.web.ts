@@ -35,7 +35,16 @@ import logger from './logger';
 let _silentAudio: HTMLAudioElement | null = null;
 let _visibilityHandler: (() => void) | null = null;
 let _gestureUnlockHandler: (() => void) | null = null;
+let _audioPauseHandler: (() => void) | null = null;
+let _revivalHandler: (() => void) | null = null;
 let _store: IStore | null = null;
+
+/**
+ * Whether the keep-alive is running. Distinguishes "the OS paused our silent
+ * loop" (revive it) from "we are tearing down" (let it stay paused), which the
+ * `pause` listener on the element itself cannot tell apart.
+ */
+let _running = false;
 
 /**
  * True only when *we* turned audio-only on because the page went hidden. A
@@ -105,6 +114,14 @@ function _setMediaSessionHandlers(): void {
     try {
         navigator.mediaSession.setActionHandler('play', keepPlaying);
         navigator.mediaSession.setActionHandler('pause', keepPlaying);
+
+        // Dismissing the media notification (Android's swipe-away, or the
+        // lock-screen stop control) fires `stop`. Its default behaviour tears
+        // the media session down, which takes the tab's "playing media"
+        // exemption with it and lets the OS throttle the backgrounded call.
+        // Claim the action and keep playing instead: leaving a call is the
+        // hangup button's job.
+        navigator.mediaSession.setActionHandler('stop', keepPlaying);
     } catch {
         // Some browsers throw on unsupported actions; failure is benign.
     }
@@ -170,6 +187,7 @@ export function startBackgroundAudioKeepAlive(roomName: string, store?: IStore):
 
     if (_silentAudio) return; // already started
 
+    _running = true;
     _setMediaSessionMeta(roomName);
 
     try {
@@ -178,6 +196,18 @@ export function startBackgroundAudioKeepAlive(roomName: string, store?: IStore):
         _silentAudio.volume = 0.001; // effectively silent but non-zero so iOS treats it as playing
         // `playsInline` keeps it from forcing fullscreen on iOS Safari.
         (_silentAudio as any).playsInline = true;
+
+        // The OS pauses this element for reasons that have nothing to do with
+        // the call: another app takes audio focus, the tab is frozen and
+        // thawed, a headset button is pressed. A paused element is no longer
+        // "playing media", which is the exemption keeping the backgrounded tab
+        // off the throttle/evict list — so take it back every time.
+        _audioPauseHandler = () => {
+            if (!_running) return;
+            void _silentAudio?.play().catch(() => undefined);
+        };
+        _silentAudio.addEventListener('pause', _audioPauseHandler);
+
         void _silentAudio.play().catch(() => {
             // iOS Safari rejects play() without user activation. The call's
             // own join/unmute taps usually satisfy this, but if not, latch a
@@ -196,21 +226,44 @@ export function startBackgroundAudioKeepAlive(roomName: string, store?: IStore):
 
     _setMediaSessionHandlers();
 
+    /**
+     * Everything that has to be true again once the page is back in front:
+     * the media session still describes this call, the keep-alive loop is
+     * playing, and the video we turned off is back on.
+     *
+     * @returns {void}
+     */
+    const revive = () => {
+        _cancelHideTimer();
+        _setMediaSessionMeta(roomName);
+        _setMediaSessionHandlers();
+        void _silentAudio?.play().catch(() => undefined);
+        _exitAudioOnlyForVisible();
+    };
+
     _visibilityHandler = () => {
         if (document.visibilityState === 'visible') {
-            _cancelHideTimer();
-            _setMediaSessionMeta(roomName);
-            void _silentAudio?.play().catch(() => undefined);
-            _exitAudioOnlyForVisible();
+            revive();
         } else {
             _cancelHideTimer();
             _hideTimer = setTimeout(_enterAudioOnlyForHidden, HIDE_GRACE_MS);
         }
     };
     document.addEventListener('visibilitychange', _visibilityHandler);
+
+    // `visibilitychange` is not the only way back. A tab the browser froze
+    // (Page Lifecycle) or put in the back/forward cache comes back through
+    // `resume`/`pageshow` instead, sometimes without a visibility transition
+    // at all, and comes back with its media session and audio element
+    // stopped. Re-assert on those too — on mobile this is the common path
+    // when the browser returns from the background.
+    _revivalHandler = revive;
+    document.addEventListener('resume', _revivalHandler);
+    window.addEventListener('pageshow', _revivalHandler);
 }
 
 export function stopBackgroundAudioKeepAlive(): void {
+    _running = false;
     _cancelHideTimer();
 
     // Leave redux the way we found it — a forced audio-only must not leak into
@@ -219,6 +272,10 @@ export function stopBackgroundAudioKeepAlive(): void {
     _store = null;
 
     if (_silentAudio) {
+        if (_audioPauseHandler) {
+            _silentAudio.removeEventListener('pause', _audioPauseHandler);
+            _audioPauseHandler = null;
+        }
         try {
             _silentAudio.pause();
         } catch { /* ignore */ }
@@ -229,11 +286,17 @@ export function stopBackgroundAudioKeepAlive(): void {
         document.removeEventListener('visibilitychange', _visibilityHandler);
         _visibilityHandler = null;
     }
+    if (_revivalHandler) {
+        document.removeEventListener('resume', _revivalHandler);
+        window.removeEventListener('pageshow', _revivalHandler);
+        _revivalHandler = null;
+    }
     _teardownGestureUnlock();
     if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
         try {
             navigator.mediaSession.setActionHandler('play', null);
             navigator.mediaSession.setActionHandler('pause', null);
+            navigator.mediaSession.setActionHandler('stop', null);
         } catch { /* ignore */ }
         try {
             navigator.mediaSession.playbackState = 'none';

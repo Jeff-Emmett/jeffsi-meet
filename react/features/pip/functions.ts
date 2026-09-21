@@ -524,10 +524,21 @@ export function setupMediaSessionHandlers(dispatch: IStore['dispatch']) {
             });
 
             // Set up hangup handler.
-            // @ts-ignore - hangup is a newer MediaSession action.
-            navigator.mediaSession.setActionHandler('hangup', () => {
-                dispatch(leaveConference());
-            });
+            //
+            // Desktop only, deliberately. On mobile the OS - not a PiP window
+            // we control - owns the media notification and the lock screen,
+            // and it surfaces whatever actions are registered. A stray tap on
+            // one of those (or the OS invoking it while the page is
+            // backgrounded, which is how opening a chat bubble over the
+            // browser used to boot people out of the room) would leave the
+            // conference with no confirmation and no way back. Mobile calls
+            // are left through the in-call hangup button, nothing else.
+            if (!isMobileBrowser()) {
+                // @ts-ignore - hangup is a newer MediaSession action.
+                navigator.mediaSession.setActionHandler('hangup', () => {
+                    dispatch(leaveConference());
+                });
+            }
 
             logger.log('MediaSession API handlers registered for PiP controls');
         } catch (error) {
