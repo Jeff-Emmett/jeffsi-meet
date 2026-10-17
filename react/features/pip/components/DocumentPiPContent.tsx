@@ -80,9 +80,25 @@ const useStyles = makeStyles()(() => {
         },
         toolbarButtonHangup: {
             background: '#e04b57'
+        },
+        toolbarButtonHangupArmed: {
+            width: 'auto',
+            padding: '0 12px',
+            borderRadius: '18px',
+            gap: '6px',
+            color: '#fff',
+            fontSize: '13px',
+            fontWeight: 600,
+            whiteSpace: 'nowrap' as const,
+            boxShadow: '0 0 0 2px #fff inset'
         }
     };
 });
+
+/**
+ * How long an armed popout hang-up waits for the confirming second click.
+ */
+const HANGUP_ARM_MS = 3000;
 
 /**
  * Content portaled into the Document Picture-in-Picture window: a mini
@@ -157,9 +173,27 @@ const DocumentPiPContent: React.FC = () => {
         dispatch(toggleVideoFromPiP());
     }, [ dispatch ]);
 
+    // The popout is a tiny window with hang-up right beside mic and camera, so
+    // one mis-click ended the call. The first click only ARMS it ("Leave?");
+    // a second click within HANGUP_ARM_MS leaves. The main toolbar's hang-up
+    // stays a single tap on purpose (no "Leave meeting?" dialog there).
+    const [ hangupArmed, setHangupArmed ] = useState(false);
+    const disarmTimer = useRef<number | undefined>(undefined);
+
+    useEffect(() => () => window.clearTimeout(disarmTimer.current), []);
+
     const handleHangup = useCallback(() => {
-        dispatch(leaveConference());
-    }, [ dispatch ]);
+        if (hangupArmed) {
+            window.clearTimeout(disarmTimer.current);
+            setHangupArmed(false);
+            dispatch(leaveConference());
+
+            return;
+        }
+        setHangupArmed(true);
+        window.clearTimeout(disarmTimer.current);
+        disarmTimer.current = window.setTimeout(() => setHangupArmed(false), HANGUP_ARM_MS);
+    }, [ dispatch, hangupArmed ]);
 
     if (!container) {
         return null;
@@ -216,13 +250,16 @@ const DocumentPiPContent: React.FC = () => {
                             src = { videoMuted ? IconVideoOff : IconVideo } />
                     </div>
                     <div
-                        className = { `${classes.toolbarButton} ${classes.toolbarButtonHangup}` }
-                        onClick = { handleHangup }>
+                        className = { `${classes.toolbarButton} ${classes.toolbarButtonHangup} ${
+                            hangupArmed ? classes.toolbarButtonHangupArmed : ''}` }
+                        onClick = { handleHangup }
+                        title = { hangupArmed ? 'Click again to leave' : 'Leave call' }>
                         <Icon
-                            ariaLabel = 'Leave call'
+                            ariaLabel = { hangupArmed ? 'Click again to leave the call' : 'Leave call' }
                             color = '#fff'
                             size = { 18 }
                             src = { IconHangup } />
+                        {hangupArmed && <span>Leave?</span>}
                     </div>
                 </div>
             )}

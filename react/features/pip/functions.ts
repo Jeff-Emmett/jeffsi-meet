@@ -2,7 +2,7 @@ import { IReduxState, IStore } from '../app/types';
 import { AVATAR_DEFAULT_BACKGROUND_COLOR } from '../base/avatar/components/web/styles';
 import { getAvatarColor, getInitials } from '../base/avatar/functions';
 import { leaveConference } from '../base/conference/actions';
-import { isMobileBrowser } from '../base/environment/utils';
+import { isMobileBrowser, isTouchFirstDevice } from '../base/environment/utils';
 import { browser } from '../base/lib-jitsi-meet';
 import { IParticipant } from '../base/participants/types';
 import { getLocalVideoTrack } from '../base/tracks/functions.any';
@@ -45,15 +45,21 @@ export function shouldShowPiP(state: IReduxState): boolean {
         return false;
     }
 
-    // Never mount the auto pop-out PiP on mobile web browsers. It is a
-    // desktop tab-switch feature (Document PiP is desktop-Chromium only), but
-    // on mobile the global window `blur`/`visibilitychange` listeners in
-    // PiPVideoElement fire on ordinary in-page interactions - most visibly
-    // opening the fullscreen chat modal, which pops the tab into native PiP
-    // and registers a MediaSession `hangup` handler that leaves the
-    // conference (users get "booted" from the room). Audio continuity while
-    // the tab is backgrounded is handled independently by background-audio.web.
-    if (isMobileBrowser()) {
+    // Mobile web gets the pop-out too, now that nothing in-page can trigger it.
+    //
+    // It was switched off on mobile (1eb2c22) because PiPVideoElement then
+    // entered PiP from window `blur`/`visibilitychange` listeners, which fire
+    // on ordinary in-page interactions - opening the fullscreen chat modal
+    // popped the tab into PiP - and a MediaSession `hangup` handler left the
+    // conference ("booted" from the room). Both causes are gone: entry is the
+    // MediaSession 'enterpictureinpicture' action, which the BROWSER invokes
+    // only when the page is really being hidden (app switch, home button), and
+    // `hangup` is never registered on touch-first devices
+    // (setupMediaSessionHandlers). Mobile has no Document PiP, so handleWindowBlur
+    // falls back to the plain video PiP. `pip.mobile: false` restores the old
+    // behaviour without a rebuild. Audio continuity while hidden stays with
+    // background-audio.web either way.
+    if (isMobileBrowser() && pipConfig?.mobile === false) {
         return false;
     }
 
@@ -533,7 +539,7 @@ export function setupMediaSessionHandlers(dispatch: IStore['dispatch']) {
             // browser used to boot people out of the room) would leave the
             // conference with no confirmation and no way back. Mobile calls
             // are left through the in-call hangup button, nothing else.
-            if (!isMobileBrowser()) {
+            if (!isTouchFirstDevice()) {
                 // @ts-ignore - hangup is a newer MediaSession action.
                 navigator.mediaSession.setActionHandler('hangup', () => {
                     dispatch(leaveConference());

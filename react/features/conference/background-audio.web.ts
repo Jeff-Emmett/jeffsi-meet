@@ -27,7 +27,7 @@
 
 import { IStore } from '../app/types';
 import { setAudioOnly } from '../base/audio-only/actions';
-import { isMobileBrowser } from '../base/environment/utils';
+import { isTouchFirstDevice } from '../base/environment/utils';
 import { isScreenVideoShared } from '../screen-share/functions';
 
 import logger from './logger';
@@ -179,7 +179,7 @@ function _exitAudioOnlyForVisible(): void {
 }
 
 export function startBackgroundAudioKeepAlive(roomName: string, store?: IStore): void {
-    if (!isMobileBrowser()) return;
+    if (!isTouchFirstDevice()) return;
 
     // Always refresh the store handle — the keep-alive may already be running
     // from a previous join within the same page load.

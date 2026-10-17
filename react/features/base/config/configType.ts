@@ -535,6 +535,7 @@ export interface IConfig {
     peopleSearchUrl?: string;
     pip?: {
         disabled?: boolean;
+        mobile?: boolean;
         showOnPrejoin?: boolean;
     };
     preferBosh?: boolean;
