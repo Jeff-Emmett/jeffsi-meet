@@ -1,43 +1,73 @@
 // @ts-ignore
 import * as ebml from 'ts-ebml/dist/EBML.min.js';
-import { v4 as uuidV4 } from 'uuid';
 
 import { IStore } from '../../../app/types';
 import { getRoomName } from '../../../base/conference/functions';
 import { isMobileBrowser } from '../../../base/environment/utils';
 import { browser } from '../../../base/lib-jitsi-meet';
-import { MEDIA_TYPE } from '../../../base/media/constants';
+import { MEDIA_TYPE, VIDEO_TYPE } from '../../../base/media/constants';
+import {
+    getLocalParticipant,
+    getParticipantDisplayName,
+    getRemoteParticipants
+} from '../../../base/participants/functions';
+import { IParticipant } from '../../../base/participants/types';
 import { getLocalTrack, getTrackState } from '../../../base/tracks/functions';
-import { isEmbedded } from '../../../base/util/embedUtils';
-import { stopLocalVideoRecording } from '../../actions.any';
+import { ITrack } from '../../../base/tracks/types';
+import { JSON_TYPE_TRANSCRIPTION_RESULT } from '../../../subtitles/constants';
+import { LOCAL_RECORDING_ERROR } from '../../constants';
 import logger from '../../logger';
+
+import LocalRecordingCompositor, { ICompositorSource } from './LocalRecordingCompositor.web';
+import LocalRecordingTranscript from './LocalRecordingTranscript.web';
 
 interface ISelfRecording {
     on: boolean;
     withVideo: boolean;
 }
 
+/**
+ * The per-participant audio file. Every participant's audio is also recorded
+ * on its own so the transcript can be attributed to speakers exactly, and so
+ * it can be re-transcribed later at higher accuracy. A stem keeps running
+ * (silent) after its participant leaves so its offset stays a simple constant.
+ */
+interface IStem {
+    destination: MediaStreamAudioDestinationNode;
+    file: string;
+    name: string;
+    offsetMs: number;
+    participantId: string;
+    recorder: MediaRecorder;
+    stopped: Promise<void>;
+    writer: WebmWriter;
+}
+
+interface IAudioSource {
+    node: MediaStreamAudioSourceNode;
+    participantId: string;
+}
+
+interface ITranscriptionResult {
+    is_interim?: boolean;
+    language?: string;
+    participant?: { id?: string; name?: string; };
+    timestamp?: string | number;
+    transcript?: Array<{ text?: string; }>;
+    type?: string;
+}
+
 interface ILocalRecordingManager {
-    addAudioTrackToLocalRecording: (track: MediaStreamTrack) => void;
-    audioContext: AudioContext | undefined;
-    audioDestination: MediaStreamAudioDestinationNode | undefined;
-    fileHandle: FileSystemFileHandle | undefined;
-    firstChunk: Blob | undefined;
-    getFilename: () => string;
-    initializeAudioMixer: () => void;
     isRecordingLocally: () => boolean;
     isSupported: () => boolean;
-    mediaType: string;
-    mixAudioStream: (stream: MediaStream) => void;
-    recorder: MediaRecorder | undefined;
-    roomName: string;
+    onTranscriptionResult: (json: ITranscriptionResult) => void;
     selfRecording: ISelfRecording;
     startLocalRecording: (store: IStore, onlySelf: boolean) => Promise<void>;
-    startTime: number | undefined;
     stopLocalRecording: () => void;
-    stream: MediaStream | undefined;
-    writableStream: FileSystemWritableFileStream | undefined;
+    syncSources: () => void;
 }
+
+type State = 'idle' | 'starting' | 'recording' | 'stopping';
 
 /**
  * After a lot of trial and error, this is the preferred media type for
@@ -50,120 +80,470 @@ interface ILocalRecordingManager {
  */
 const PREFERRED_MEDIA_TYPE = 'video/webm;codecs=vp8,opus';
 
+const SELF_AUDIO_MEDIA_TYPE = 'audio/webm;';
+
+const STEM_MEDIA_TYPE = 'audio/webm;codecs=opus';
+
 const VIDEO_BIT_RATE = 2500000; // 2.5Mbps in bits
 
+const STEM_BIT_RATE = 48000;
 
-const LocalRecordingManager: ILocalRecordingManager = {
-    recorder: undefined,
-    stream: undefined,
-    audioContext: undefined,
-    audioDestination: undefined,
-    roomName: '',
+const AUDIO_BIT_RATE = 128000;
+
+const CHUNK_MS = 5000;
+
+/**
+ * How often the audio sources are re-checked in case a track changed without
+ * a redux action (e.g. the screen-share audio mixer swapping the mic track).
+ */
+const SYNC_INTERVAL_MS = 1000;
+
+const TRANSCRIPT_FLUSH_MS = 30000;
+
+/**
+ * Makes a string safe as a file or folder name on every OS.
+ *
+ * @param {string} name - The name.
+ * @returns {string}
+ */
+function safeName(name: string) {
+    return name.replace(/[^\p{L}\p{N}._ -]+/gu, '_').trim()
+        .slice(0, 60) || 'unnamed';
+}
+
+/**
+ * Streams MediaRecorder chunks to a file and makes the WebM seekable at the end.
+ */
+class WebmWriter {
+    private _chain: Promise<void>;
+    private _first: Blob | undefined;
+    private _seekable = false;
+    private _writable: FileSystemWritableFileStream | undefined;
+
+    /**
+     * Opens the file for writing.
+     *
+     * @param {Promise<FileSystemFileHandle>} handle - The target file.
+     */
+    constructor(handle: Promise<FileSystemFileHandle>) {
+        this._chain = handle
+            .then(h => h.createWritable())
+            .then(w => {
+                this._writable = w;
+            })
+            .catch(e => logger.error('Error while opening a local recording file', e));
+    }
+
+    /**
+     * Appends a chunk (writes are serialised).
+     *
+     * @param {Blob} blob - Recorded data.
+     * @returns {void}
+     */
+    write(blob: Blob) {
+        this._chain = this._chain.then(async () => {
+            let data = blob;
+
+            if (!this._first) {
+                // Never drop the first chunk: it carries the WebM header. If the
+                // header can't be patched, the file is kept, just not seekable.
+                try {
+                    data = await fixDuration(data, 864000000); // Reserve 24h.
+                    this._seekable = true;
+                } catch (e) {
+                    logger.warn('Local recording file will not be seekable', e);
+                }
+                this._first = data;
+            }
+            await this._writable?.write(data);
+        })
+        .catch(e => logger.error('Error while writing to a local recording file', e));
+    }
+
+    /**
+     * Rewrites the header with the real duration and closes the file.
+     *
+     * @param {number} duration - Duration in ms.
+     * @returns {Promise<void>}
+     */
+    finish(duration: number) {
+        this._chain = this._chain.then(async () => {
+            if (this._seekable && this._first && this._writable) {
+                await this._writable.seek(0);
+                await this._writable.write(await fixDuration(this._first, duration));
+            }
+            await this._writable?.close();
+        })
+        .catch(e => logger.error('Error while finalising a local recording file', e));
+
+        return this._chain;
+    }
+}
+
+/**
+ * Returns the raw microphone track of the local audio track. While a screen
+ * share with audio is running the local track is replaced by a mic+screen
+ * mix; we take the mic and the screen audio separately instead so neither is
+ * counted twice.
+ *
+ * @param {any} jitsiTrack - The local JitsiLocalTrack.
+ * @returns {MediaStreamTrack|undefined}
+ */
+function getRawMicTrack(jitsiTrack: any): MediaStreamTrack | undefined {
+    const effect = jitsiTrack?._streamEffect;
+
+    if (typeof effect?.setMuted === 'function' && effect?._originalTrack) {
+        return effect._originalTrack;
+    }
+
+    return jitsiTrack?.getTrack?.();
+}
+
+/**
+ * Whether the track is a screen share.
+ *
+ * @param {ITrack} t - Track.
+ * @returns {boolean}
+ */
+function isScreenTrack(t: ITrack) {
+    return t.mediaType === MEDIA_TYPE.SCREENSHARE || t.videoType === VIDEO_TYPE.DESKTOP;
+}
+
+/**
+ * Returns a live MediaStreamTrack for a redux track, unless it is muted.
+ *
+ * @param {ITrack} t - Track.
+ * @returns {MediaStreamTrack|undefined}
+ */
+function liveTrack(t: ITrack | undefined): MediaStreamTrack | undefined {
+    const track: MediaStreamTrack | undefined = t?.jitsiTrack?.getTrack?.();
+
+    return t && !t.muted && track?.readyState === 'live' ? track : undefined;
+}
+
+const LocalRecordingManager: ILocalRecordingManager & {
+    _audioContext: AudioContext | undefined;
+    _compositor: LocalRecordingCompositor | undefined;
+    _compositorSources: () => ICompositorSource[];
+    _folder: FileSystemDirectoryHandle | undefined;
+    _getStemDestination: (participantId: string) => MediaStreamAudioDestinationNode;
+    _mix: MediaStreamAudioDestinationNode | undefined;
+    _recorder: MediaRecorder | undefined;
+    _roomName: string;
+    _sources: Map<string, IAudioSource>;
+    _start: (store: IStore, onlySelf: boolean) => Promise<void>;
+    _startTime: number;
+    _state: State;
+    _stems: Map<string, IStem>;
+    _store: IStore | undefined;
+    _teardown: () => void;
+    _timers: number[];
+    _transcript: LocalRecordingTranscript | undefined;
+    _transcriptFlushed: number;
+    _writeText: (name: string, content: string) => Promise<void>;
+    _writeTranscript: () => Promise<void>;
+} = {
+    _audioContext: undefined,
+    _compositor: undefined,
+    _folder: undefined,
+    _mix: undefined,
+    _recorder: undefined,
+    _roomName: '',
+    _sources: new Map(),
+    _startTime: 0,
+    _state: 'idle',
+    _stems: new Map(),
+    _store: undefined,
+    _timers: [],
+    _transcript: undefined,
+    _transcriptFlushed: 0,
     selfRecording: {
         on: false,
         withVideo: false
     },
-    firstChunk: undefined,
-    fileHandle: undefined,
-    startTime: undefined,
-    writableStream: undefined,
-
-    get mediaType() {
-        if (this.selfRecording.on && !this.selfRecording.withVideo) {
-            return 'audio/webm;';
-        }
-
-        return PREFERRED_MEDIA_TYPE;
-    },
 
     /**
-     * Initializes audio context used for mixing audio tracks.
+     * Connects the audio of every participant (local mic, local screen-share
+     * audio, every remote participant) to the mixed recording and to that
+     * participant's own stem, and disconnects tracks that went away. Safe to
+     * call at any time.
      *
      * @returns {void}
      */
-    initializeAudioMixer() {
-        this.audioContext = new AudioContext();
-        this.audioDestination = this.audioContext.createMediaStreamDestination();
-    },
+    syncSources() {
+        const ctx = this._audioContext;
 
-    /**
-     * Mixes multiple audio tracks to the destination media stream.
-     *
-     * @param {MediaStream} stream - The stream to mix.
-     * @returns {void}
-     * */
-    mixAudioStream(stream) {
-        if (stream.getAudioTracks().length > 0 && this.audioDestination) {
-            this.audioContext?.createMediaStreamSource(stream).connect(this.audioDestination);
-        }
-    },
-
-    /**
-     * Adds audio track to the recording stream.
-     *
-     * @param {MediaStreamTrack} track - The track to be added.
-     * @returns {void}
-     */
-    addAudioTrackToLocalRecording(track) {
-        if (this.selfRecording.on) {
+        if (this._state !== 'recording' || !ctx || !this._mix || !this._store) {
             return;
         }
-        if (track) {
-            const stream = new MediaStream([ track ]);
 
-            this.mixAudioStream(stream);
+        const state = this._store.getState();
+        const tracks = getTrackState(state);
+        const localId = getLocalParticipant(state)?.id ?? 'local';
+        const wanted = new Map<string, { participantId: string; track: MediaStreamTrack; }>();
+        const want = (track: MediaStreamTrack | undefined, participantId: string) => {
+            track?.readyState === 'live' && wanted.set(track.id, { participantId, track });
+        };
+
+        want(getRawMicTrack(getLocalTrack(tracks, MEDIA_TYPE.AUDIO)?.jitsiTrack), localId);
+        want(state['features/screen-share']?.desktopAudioTrack?.getTrack?.(), localId);
+        for (const t of tracks) {
+            if (!t.local && t.mediaType === MEDIA_TYPE.AUDIO && t.jitsiTrack) {
+                want(t.jitsiTrack.getTrack(), t.participantId);
+            }
+        }
+
+        for (const [ id, source ] of this._sources) {
+            if (!wanted.has(id)) {
+                source.node.disconnect();
+                this._sources.delete(id);
+            }
+        }
+
+        for (const [ id, { participantId, track } ] of wanted) {
+            if (this._sources.has(id)) {
+                continue;
+            }
+            const node = ctx.createMediaStreamSource(new MediaStream([ track ]));
+
+            node.connect(this._mix);
+            node.connect(this._getStemDestination(participantId));
+            this._sources.set(id, { node, participantId });
         }
     },
 
     /**
-     * Returns a filename based ono the Jitsi room name in the URL and timestamp.
+     * Returns (creating on first use) the audio node feeding a participant's
+     * stem file.
      *
-     * @returns {string}
-     * */
-    getFilename() {
-        const now = new Date();
-        const timestamp = now.toISOString();
+     * @param {string} participantId - Participant.
+     * @returns {MediaStreamAudioDestinationNode}
+     */
+    _getStemDestination(participantId: string) {
+        const existing = this._stems.get(participantId);
 
-        return `${this.roomName}_${timestamp}`;
+        if (existing) {
+            return existing.destination;
+        }
+
+        const destination = this._audioContext!.createMediaStreamDestination();
+        const name = getParticipantDisplayName(this._store!.getState(), participantId);
+        const file = `${safeName(name)}-${safeName(participantId)}.webm`;
+        const writer = new WebmWriter(this._folder!.getDirectoryHandle('stems', { create: true })
+            .then(dir => dir.getFileHandle(file, { create: true })));
+        const recorder = new MediaRecorder(destination.stream, {
+            audioBitsPerSecond: STEM_BIT_RATE,
+            mimeType: STEM_MEDIA_TYPE
+        });
+        const stopped = new Promise<void>(resolve => recorder.addEventListener('stop', () => resolve(), { once: true }));
+
+        recorder.addEventListener('dataavailable', e => e.data?.size && writer.write(e.data));
+        recorder.start(CHUNK_MS);
+        this._stems.set(participantId, {
+            destination,
+            file: `stems/${file}`,
+            name,
+            offsetMs: Date.now() - this._startTime,
+            participantId,
+            recorder,
+            stopped,
+            writer
+        });
+
+        return destination;
     },
 
     /**
-     * Stops local recording.
+     * The tiles the compositor draws: one per real participant (camera, or a
+     * name card while the camera is off) plus one per screen share.
+     *
+     * @returns {ICompositorSource[]}
+     */
+    _compositorSources() {
+        const state = this._store!.getState();
+        const local = getLocalParticipant(state);
+        const byParticipant = new Map<string, { camera?: ITrack; screen?: ITrack; }>();
+
+        for (const t of getTrackState(state)) {
+            if (t.mediaType === MEDIA_TYPE.AUDIO) {
+                continue;
+            }
+            const id = t.local ? local?.id ?? '' : t.participantId;
+            const entry = byParticipant.get(id) ?? {};
+
+            entry[isScreenTrack(t) ? 'screen' : 'camera'] = t;
+            byParticipant.set(id, entry);
+        }
+
+        const participants: IParticipant[] = [
+            ...local ? [ local ] : [],
+            ...getRemoteParticipants(state).values()
+        ].filter(p => !p.fakeParticipant);
+        const sources: ICompositorSource[] = [];
+
+        for (const p of participants) {
+            const own = byParticipant.get(p.id);
+            const name = getParticipantDisplayName(state, p.id);
+            const screen = liveTrack(own?.screen);
+
+            sources.push({
+                id: p.id,
+                isScreen: false,
+                name,
+                speaking: Boolean(p.dominantSpeaker),
+                track: liveTrack(own?.camera)
+            });
+            screen && sources.push({ id: `${p.id}-screen`, isScreen: true, name, speaking: false, track: screen });
+        }
+
+        return sources;
+    },
+
+    /**
+     * Writes a small text file into the recording folder.
+     *
+     * @param {string} name - File name.
+     * @param {string} content - Content.
+     * @returns {Promise<void>}
+     */
+    async _writeText(name: string, content: string) {
+        try {
+            const handle = await this._folder!.getFileHandle(name, { create: true });
+            const writable = await handle.createWritable();
+
+            await writable.write(content);
+            await writable.close();
+        } catch (e) {
+            logger.error(`Error while writing ${name}`, e);
+        }
+    },
+
+    /**
+     * Writes the transcript files.
+     *
+     * @returns {Promise<void>}
+     */
+    async _writeTranscript() {
+        const transcript = this._transcript;
+
+        if (!transcript || !this._folder) {
+            return;
+        }
+        this._transcriptFlushed = transcript.segments.length;
+        await Promise.all([
+            this._writeText('transcript.md', transcript.toMarkdown(this._roomName)),
+            this._writeText('transcript.vtt', transcript.toVtt()),
+            this._writeText('transcript.json', transcript.toJson())
+        ]);
+    },
+
+    /**
+     * Releases everything a session holds and returns to idle. Safe to call
+     * from any state, including a start that failed half way.
+     *
+     * @returns {void}
+     */
+    _teardown() {
+        this._timers.forEach(t => clearInterval(t));
+        this._timers = [];
+        for (const stem of this._stems.values()) {
+            stem.recorder.state !== 'inactive' && stem.recorder.stop();
+        }
+        this._compositor?.stop();
+        for (const { node } of this._sources.values()) {
+            node.disconnect();
+        }
+        this._audioContext?.close().catch(() => { /* already closed */ });
+
+        this._audioContext = undefined;
+        this._compositor = undefined;
+        this._folder = undefined;
+        this._mix = undefined;
+        this._recorder = undefined;
+        this._sources.clear();
+        this._stems.clear();
+        this._store = undefined;
+        this._transcript = undefined;
+        this._transcriptFlushed = 0;
+        this._state = 'idle';
+    },
+
+    /**
+     * Records a final transcription result (exactly attributed to the
+     * participant whose audio stream it came from).
+     *
+     * @param {ITranscriptionResult} json - The transcriber's message.
+     * @returns {void}
+     */
+    onTranscriptionResult(json) {
+        if (!this._transcript || json?.type !== JSON_TYPE_TRANSCRIPTION_RESULT || json.is_interim) {
+            return;
+        }
+        const speakerId = json.participant?.id ?? 'unknown';
+
+        this._transcript.add({
+            language: json.language,
+            speaker: json.participant?.name
+                || (this._store ? getParticipantDisplayName(this._store.getState(), speakerId) : speakerId),
+            speakerId,
+            text: json.transcript?.[0]?.text ?? '',
+            timestamp: json.timestamp
+        });
+    },
+
+    /**
+     * Stops local recording. Finalisation (closing the files, writing the
+     * transcript) happens in the recorder's stop handler.
      *
      * @returns {void}
      * */
     stopLocalRecording() {
-        this.recorder?.stop();
+        if (this._state === 'recording' && this._recorder?.state === 'recording') {
+            this._state = 'stopping';
+            this._recorder.stop();
+        }
     },
 
     /**
-     * Starts a local recording.
+     * Starts a local recording into a folder the user picks: the composited
+     * video, one audio file per participant, the live transcript and a
+     * manifest tying them together.
      *
      * @param {IStore} store - The redux store.
      * @param {boolean} onlySelf - Whether to record only self streams.
      * @returns {void}
      */
     async startLocalRecording(store, onlySelf) {
-        const { dispatch, getState } = store;
+        if (this._state !== 'idle') {
+            throw new Error(LOCAL_RECORDING_ERROR.ALREADY_RUNNING);
+        }
+        this._state = 'starting';
 
-        this.roomName = getRoomName(getState()) ?? '';
+        try {
+            await this._start(store, onlySelf);
+            this._state = 'recording';
+            this.syncSources();
+        } catch (e) {
+            this._teardown();
+            throw e;
+        }
+    },
 
-        // Get a handle to the file we are going to write.
-        const options = {
-            startIn: 'downloads',
-            suggestedName: `${this.getFilename()}.webm`,
-        };
-
-        // @ts-expect-error
-        this.fileHandle = await window.showSaveFilePicker(options);
-        this.writableStream = await this.fileHandle?.createWritable();
-
-        const supportsCaptureHandle = !isEmbedded();
-        const tabId = uuidV4();
-
-        this.selfRecording.on = onlySelf;
-        let gdmStream: MediaStream = new MediaStream();
+    /**
+     * The body of {@link startLocalRecording}; the caller tears down on any throw.
+     *
+     * @param {IStore} store - The redux store.
+     * @param {boolean} onlySelf - Whether to record only self streams.
+     * @returns {Promise<void>}
+     */
+    async _start(store: IStore, onlySelf: boolean) {
+        const { getState } = store;
         const tracks = getTrackState(getState());
+        let selfTracks: MediaStreamTrack[] = [];
+
+        this._store = store;
+        this._roomName = getRoomName(getState()) ?? '';
+        this.selfRecording.on = onlySelf;
 
         if (onlySelf) {
             const audioTrack: MediaStreamTrack | undefined = getLocalTrack(tracks, MEDIA_TYPE.AUDIO)?.jitsiTrack?.track;
@@ -172,145 +552,128 @@ const LocalRecordingManager: ILocalRecordingManager = {
             if (videoTrack && videoTrack.readyState !== 'live') {
                 videoTrack = undefined;
             }
-
             if (!audioTrack && !videoTrack) {
-                throw new Error('NoLocalStreams');
+                throw new Error(LOCAL_RECORDING_ERROR.NO_LOCAL_STREAMS);
             }
-
             this.selfRecording.withVideo = Boolean(videoTrack);
-            const localTracks: MediaStreamTrack[] = [];
-
-            audioTrack && localTracks.push(audioTrack);
-            videoTrack && localTracks.push(videoTrack);
-            this.stream = new MediaStream(localTracks);
+            selfTracks = [ audioTrack, videoTrack ].filter(Boolean) as MediaStreamTrack[];
         } else {
-            if (supportsCaptureHandle) {
-                // @ts-ignore
-                navigator.mediaDevices.setCaptureHandleConfig({
-                    handle: `JitsiMeet-${tabId}`,
-                    permittedOrigins: [ '*' ]
-                });
-            }
-
-            gdmStream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    displaySurface: 'browser',
-                    frameRate: 30
-                },
-                audio: {
-                    autoGainControl: false,
-                    channelCount: 2,
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    // @ts-ignore
-                    restrictOwnAudio: false,
-                    // @ts-ignore
-                    suppressLocalAudioPlayback: false,
-                },
-                // @ts-ignore
-                preferCurrentTab: true,
-                surfaceSwitching: 'exclude'
-            });
-
-            const gdmVideoTrack = gdmStream.getVideoTracks()[0];
-
-            if (supportsCaptureHandle) {
-                const isBrowser = gdmVideoTrack.getSettings().displaySurface === 'browser';
-                const matchesHandle = (supportsCaptureHandle // @ts-ignore
-                    && gdmVideoTrack.getCaptureHandle()?.handle === `JitsiMeet-${tabId}`);
-
-                if (!isBrowser || !matchesHandle) {
-                    gdmStream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
-                    throw new Error('WrongSurfaceSelected');
-                }
-            }
-
-            this.initializeAudioMixer();
-
-            const gdmAudioTrack = gdmStream.getAudioTracks()[0];
-
-            if (!gdmAudioTrack) {
-                throw new Error('NoAudioTrackFound');
-            }
-
-            this.addAudioTrackToLocalRecording(gdmAudioTrack);
-
-            const localAudioTrack = getLocalTrack(tracks, MEDIA_TYPE.AUDIO)?.jitsiTrack?.track;
-
-            if (localAudioTrack) {
-                this.addAudioTrackToLocalRecording(localAudioTrack);
-            }
-
-            this.stream = new MediaStream([
-                ...this.audioDestination?.stream.getAudioTracks() || [],
-                gdmVideoTrack
-            ]);
+            // Created before the picker so it is still covered by the click
+            // that started the recording (autoplay policy).
+            this._audioContext = new AudioContext();
         }
 
-        this.recorder = new MediaRecorder(this.stream, {
+        let parent: FileSystemDirectoryHandle;
+
+        try {
+            // @ts-expect-error
+            parent = await window.showDirectoryPicker({ id: 'jeffsi-recordings', mode: 'readwrite',
+                startIn: 'downloads' });
+        } catch (e) {
+            throw new Error(e instanceof DOMException && e.name === 'AbortError'
+                ? LOCAL_RECORDING_ERROR.CANCELLED : LOCAL_RECORDING_ERROR.NO_FOLDER_ACCESS);
+        }
+
+        const startedAt = new Date();
+        const base = safeName(`${this._roomName}_${startedAt.toISOString().replace(/[:.]/g, '-')}`);
+        const videoFile = `${base}.webm`;
+
+        try {
+            this._folder = await parent.getDirectoryHandle(base, { create: true });
+        } catch {
+            throw new Error(LOCAL_RECORDING_ERROR.NO_FOLDER_ACCESS);
+        }
+        this._startTime = startedAt.getTime();
+
+        let stream: MediaStream;
+
+        if (onlySelf) {
+            stream = new MediaStream(selfTracks);
+        } else {
+            const audioContext = this._audioContext!;
+
+            audioContext.resume().catch(() => { /* resumes on the next gesture */ });
+            this._mix = audioContext.createMediaStreamDestination();
+            this._compositor = new LocalRecordingCompositor(() => this._compositorSources());
+            this._transcript = new LocalRecordingTranscript(this._startTime);
+            stream = new MediaStream([ ...this._mix.stream.getAudioTracks(), this._compositor.start() ]);
+
+            this._timers.push(
+                window.setInterval(() => this.syncSources(), SYNC_INTERVAL_MS),
+                window.setInterval(() => {
+                    if (this._transcript && this._transcript.segments.length !== this._transcriptFlushed) {
+                        this._writeTranscript();
+                    }
+                }, TRANSCRIPT_FLUSH_MS));
+        }
+
+        const writer = new WebmWriter(this._folder.getFileHandle(videoFile, { create: true }));
+        const recorder = new MediaRecorder(stream, {
             // @ts-ignore
             audioBitrateMode: 'constant',
-            mimeType: this.mediaType,
+            audioBitsPerSecond: AUDIO_BIT_RATE,
+            mimeType: onlySelf && !this.selfRecording.withVideo ? SELF_AUDIO_MEDIA_TYPE : PREFERRED_MEDIA_TYPE,
             videoBitsPerSecond: VIDEO_BIT_RATE
         });
 
-        this.recorder.addEventListener('dataavailable', async e => {
-            if (this.recorder && e.data && e.data.size > 0) {
-                let data = e.data;
+        recorder.addEventListener('dataavailable', e => e.data?.size && writer.write(e.data));
 
-                if (!this.firstChunk) {
-                    this.firstChunk = data = await fixDuration(data, 864000000); // Reserve 24h.
-                }
-
-                await this.writableStream?.write(data);
-            }
-        });
-
-        this.recorder.addEventListener('start', () => {
-            this.startTime = Date.now();
-        });
-
-        this.recorder.addEventListener('stop', async () => {
-            const duration = Date.now() - this.startTime!;
-
-            this.stream?.getTracks().forEach((track: MediaStreamTrack) => track.stop());
-            gdmStream?.getTracks().forEach((track: MediaStreamTrack) => track.stop());
-
+        recorder.addEventListener('stop', async () => {
             // The stop event is emitted when the recorder is done, and _after_ the last buffered
             // data has been handed over to the dataavailable event.
-            this.recorder = undefined;
-            this.audioContext = undefined;
-            this.audioDestination = undefined;
-            this.startTime = undefined;
+            const stoppedAt = Date.now();
+            const duration = stoppedAt - this._startTime;
+            const stems = [ ...this._stems.values() ];
 
-            if (this.writableStream) {
-                try {
-                    if (this.firstChunk) {
-                        await this.writableStream.seek(0);
-                        await this.writableStream.write(await fixDuration(this.firstChunk!, duration));
-                    }
-                    await this.writableStream.close();
-                } catch (e) {
-                    logger.error('Error while writing to the local recording file', e);
-                } finally {
-                    this.firstChunk = undefined;
-                    this.fileHandle = undefined;
-                    this.writableStream = undefined;
+            // Media can also end by itself (e.g. the self-recorded camera is turned off).
+            this._state = 'stopping';
+
+            try {
+                this._timers.forEach(t => clearInterval(t));
+                this._timers = [];
+                stems.forEach(s => s.recorder.state !== 'inactive' && s.recorder.stop());
+                await Promise.all(stems.map(s => s.stopped));
+
+                // A self recording records the live call tracks directly; those must keep running.
+                onlySelf || stream.getTracks().forEach(t => t.stop());
+
+                await Promise.all([
+                    writer.finish(duration),
+                    ...stems.map(s => s.writer.finish(duration - s.offsetMs))
+                ]);
+
+                if (!onlySelf) {
+                    await this._writeTranscript();
+                    const state = store.getState();
+
+                    await this._writeText('manifest.json', JSON.stringify({
+                        room: this._roomName,
+                        startedAt: startedAt.toISOString(),
+                        durationMs: duration,
+                        video: videoFile,
+                        stems: stems.map(s => ({
+                            file: s.file,
+                            participantId: s.participantId,
+                            name: getParticipantDisplayName(state, s.participantId) || s.name,
+                            offsetMs: s.offsetMs,
+                            durationMs: duration - s.offsetMs
+                        })),
+                        transcript: {
+                            source: 'live',
+                            segments: this._transcript?.segments.length ?? 0,
+                            files: [ 'transcript.md', 'transcript.vtt', 'transcript.json' ]
+                        }
+                    }, null, 2));
                 }
+            } catch (e) {
+                logger.error('Error while finalising the local recording', e);
+            } finally {
+                this._teardown();
             }
         });
 
-        if (!onlySelf) {
-            gdmStream?.addEventListener('inactive', () => {
-                dispatch(stopLocalVideoRecording());
-            });
-
-            this.stream.addEventListener('inactive', () => {
-                dispatch(stopLocalVideoRecording());
-            });
-        }
-
-        this.recorder.start(5000);
+        this._recorder = recorder;
+        recorder.start(CHUNK_MS);
     },
 
     /**
@@ -325,10 +688,10 @@ const LocalRecordingManager: ILocalRecordingManager = {
             && !isMobileBrowser()
 
             // @ts-expect-error
-            && Boolean(navigator.mediaDevices.setCaptureHandleConfig)
-            // @ts-expect-error
-            && typeof window.showSaveFilePicker !== 'undefined'
-            && MediaRecorder.isTypeSupported(PREFERRED_MEDIA_TYPE);
+            && typeof window.showDirectoryPicker !== 'undefined'
+            && typeof HTMLCanvasElement.prototype.captureStream === 'function'
+            && MediaRecorder.isTypeSupported(PREFERRED_MEDIA_TYPE)
+            && MediaRecorder.isTypeSupported(STEM_MEDIA_TYPE);
     },
 
     /**
@@ -337,7 +700,7 @@ const LocalRecordingManager: ILocalRecordingManager = {
      * @returns {boolean}
      */
     isRecordingLocally() {
-        return Boolean(this.recorder);
+        return this._state === 'recording';
     }
 
 };

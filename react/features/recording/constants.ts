@@ -1,5 +1,15 @@
 import { JitsiRecordingConstants } from '../base/lib-jitsi-meet';
 
+/**
+ * Reasons a local recording fails to start (the Error message).
+ */
+export const LOCAL_RECORDING_ERROR = {
+    ALREADY_RUNNING: 'AlreadyRunning',
+    CANCELLED: 'Cancelled',
+    NO_FOLDER_ACCESS: 'NoFolderAccess',
+    NO_LOCAL_STREAMS: 'NoLocalStreams'
+};
+
 
 /**
  * The identifier of the sound to be played when a live streaming session is stopped.

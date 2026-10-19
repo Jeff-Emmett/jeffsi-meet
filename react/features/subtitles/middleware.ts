@@ -23,16 +23,11 @@ import {
     storeSubtitle,
     updateTranscriptMessage
 } from './actions.any';
+import { JSON_TYPE_TRANSCRIPTION_RESULT } from './constants';
 import { notifyTranscriptionChunkReceived } from './functions';
 import { areClosedCaptionsEnabled, isCCTabEnabled } from './functions.any';
 import logger from './logger';
 import { ISubtitle, ITranscriptMessage } from './types';
-
-/**
- * The type of json-message which indicates that json carries a
- * transcription result.
- */
-const JSON_TYPE_TRANSCRIPTION_RESULT = 'transcription-result';
 
 /**
  * The type of json-message which indicates that json carries a

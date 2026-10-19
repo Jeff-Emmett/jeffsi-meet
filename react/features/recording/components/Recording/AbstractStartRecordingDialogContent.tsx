@@ -424,7 +424,8 @@ export function mapStateToProps(state: IReduxState) {
         _localRecordingAvailable,
         _localRecordingEnabled: !localRecording?.disable,
         _localRecordingSelfEnabled: !localRecording?.disableSelfRecording,
-        _localRecordingNoNotification: !localRecording?.notifyAllParticipants,
+        // Jeffsi always announces local recordings (see base/participants/middleware).
+        _localRecordingNoNotification: false,
         _styles: ColorSchemeRegistry.get(state, 'StartRecordingDialogContent')
     };
 }

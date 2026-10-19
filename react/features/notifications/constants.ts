@@ -57,6 +57,18 @@ export const NOTIFICATION_ICON = {
 };
 
 /**
+ * Translation key prefixes of notifications that are always shown, regardless
+ * of config.notifications / config.disabledNotifications: announcing that the
+ * meeting is being recorded, streamed or transcribed is not optional.
+ */
+export const MANDATORY_NOTIFICATION_KEY_PREFIXES = [
+    'recording.',
+    'liveStreaming.',
+    'transcribing.',
+    'notify.localRecording'
+];
+
+/**
  * The identifier of the calendar notification.
  *
  * @type {string}

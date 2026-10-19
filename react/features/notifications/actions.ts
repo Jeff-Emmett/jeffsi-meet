@@ -13,6 +13,7 @@ import {
     SHOW_NOTIFICATION
 } from './actionTypes';
 import {
+    MANDATORY_NOTIFICATION_KEY_PREFIXES,
     NOTIFICATION_ICON,
     NOTIFICATION_TIMEOUT,
     NOTIFICATION_TIMEOUT_TYPE,
@@ -133,12 +134,18 @@ export function showNotification(props: INotificationProps = {}, type?: string) 
 
         const { descriptionKey, titleKey } = props;
 
+        // Jeffsi: everyone must learn that they are being recorded or
+        // transcribed, so those notices ignore the config allow/deny lists.
+        const isRecordingNotice = [ descriptionKey, titleKey ].some(
+            key => key && MANDATORY_NOTIFICATION_KEY_PREFIXES.some(prefix => key.startsWith(prefix)));
+
         const shouldDisplay = enabledFlag
-            && !(disabledNotifications.includes(descriptionKey ?? '')
-                || disabledNotifications.includes(titleKey ?? ''))
-            && (!notifications
-                || notifications.includes(descriptionKey ?? '')
-                || notifications.includes(titleKey ?? ''));
+            && (isRecordingNotice
+                || (!(disabledNotifications.includes(descriptionKey ?? '')
+                    || disabledNotifications.includes(titleKey ?? ''))
+                && (!notifications
+                    || notifications.includes(descriptionKey ?? '')
+                    || notifications.includes(titleKey ?? ''))));
 
         if (typeof APP !== 'undefined') {
             APP.API.notifyNotificationTriggered(titleKey, descriptionKey);

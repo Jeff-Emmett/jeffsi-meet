@@ -27,7 +27,13 @@ StateListenerRegistry.register(
 );
 StateListenerRegistry.register(
     /* selector */ isTranscribing,
-    /* listener */ (isTranscribingValue, { getState }) => {
+    /* listener */ (isTranscribingValue, { getState, dispatch }) => {
+        // Jeffsi: tell everyone (including late joiners) that their speech is being transcribed.
+        dispatch(showNotification({
+            descriptionKey: isTranscribingValue ? 'transcribing.startedDescription' : 'transcribing.stoppedDescription',
+            titleKey: isTranscribingValue ? 'transcribing.started' : 'transcribing.stopped'
+        }, NOTIFICATION_TIMEOUT_TYPE.LONG));
+
         if (isTranscribingValue) {
             notifyTranscribingStatusChanged(getState, true);
         } else {

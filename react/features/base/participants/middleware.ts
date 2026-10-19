@@ -258,9 +258,10 @@ MiddlewareRegistry.register(store => next => action => {
         const state = store.getState();
         const { recording, onlySelf } = action;
         const localId = getLocalParticipant(state)?.id;
-        const { localRecording } = state['features/base/config'];
 
-        if (localRecording?.notifyAllParticipants && !onlySelf && localId) {
+        // Jeffsi: a recording of other people is always announced to them —
+        // localRecording.notifyAllParticipants is deliberately not consulted.
+        if (!onlySelf && localId) {
             store.dispatch(participantUpdated({
                 // XXX Only the local participant is allowed to update without
                 // stating the JitsiConference instance (i.e. participant property
@@ -794,7 +795,7 @@ function _localRecordingUpdated({ dispatch, getState }: IStore, conference: IJit
         title: participantName,
         descriptionKey: newValue ? 'notify.localRecordingStarted' : 'notify.localRecordingStopped',
         uid: LOCAL_RECORDING_NOTIFICATION_ID
-    }, NOTIFICATION_TIMEOUT_TYPE.MEDIUM));
+    }, NOTIFICATION_TIMEOUT_TYPE.LONG));
     dispatch(playSound(newValue ? RECORDING_ON_SOUND_ID : RECORDING_OFF_SOUND_ID));
 }
 

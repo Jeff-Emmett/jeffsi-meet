@@ -4,7 +4,11 @@ import { createRecordingEvent } from '../analytics/AnalyticsEvents';
 import { sendAnalytics } from '../analytics/functions';
 import { IStore } from '../app/types';
 import { APP_WILL_MOUNT, APP_WILL_UNMOUNT } from '../base/app/actionTypes';
-import { CONFERENCE_JOIN_IN_PROGRESS } from '../base/conference/actionTypes';
+import {
+    CONFERENCE_JOIN_IN_PROGRESS,
+    ENDPOINT_MESSAGE_RECEIVED,
+    NON_PARTICIPANT_MESSAGE_RECEIVED
+} from '../base/conference/actionTypes';
 import { getCurrentConference } from '../base/conference/functions';
 import { openDialog } from '../base/dialog/actions';
 import JitsiMeetJS, {
@@ -17,10 +21,9 @@ import {
     setVideoMuted,
     setVideoUnmutePermissions
 } from '../base/media/actions';
-import { MEDIA_TYPE } from '../base/media/constants';
 import { PARTICIPANT_UPDATED } from '../base/participants/actionTypes';
 import { updateLocalRecordingStatus } from '../base/participants/actions';
-import { PARTICIPANT_ROLE } from '../base/participants/constants';
+import { PARTICIPANT_ROLE, TRANSCRIBER_ID } from '../base/participants/constants';
 import { getLocalParticipant, getParticipantDisplayName } from '../base/participants/functions';
 import MiddlewareRegistry from '../base/redux/MiddlewareRegistry';
 import StateListenerRegistry from '../base/redux/StateListenerRegistry';
@@ -28,9 +31,11 @@ import {
     playSound,
     stopSound
 } from '../base/sounds/actions';
-import { TRACK_ADDED } from '../base/tracks/actionTypes';
+import { TRACK_ADDED, TRACK_REMOVED, TRACK_UPDATED } from '../base/tracks/actionTypes';
 import { hideNotification, showErrorNotification, showNotification } from '../notifications/actions';
 import { NOTIFICATION_TIMEOUT_TYPE } from '../notifications/constants';
+import { SET_SCREENSHARE_TRACKS } from '../screen-share/actionTypes';
+import { setRequestingSubtitles } from '../subtitles/actions.any';
 import { isRecorderTranscriptionsRunning } from '../transcribing/functions';
 
 import { RECORDING_SESSION_UPDATED, START_LOCAL_RECORDING, STOP_LOCAL_RECORDING } from './actionTypes';
@@ -52,6 +57,7 @@ import LocalRecordingManager from './components/Recording/LocalRecordingManager'
 import {
     LIVE_STREAMING_OFF_SOUND_ID,
     LIVE_STREAMING_ON_SOUND_ID,
+    LOCAL_RECORDING_ERROR,
     RECORDING_OFF_SOUND_ID,
     RECORDING_ON_SOUND_ID,
     START_RECORDING_NOTIFICATION_ID
@@ -64,6 +70,12 @@ import {
     unregisterRecordingAudioFiles
 } from './functions';
 import logger from './logger';
+
+/**
+ * Whether the running local recording turned on transcription itself (and so
+ * should release the request when it stops).
+ */
+let transcriptionRequestedByRecording = false;
 
 /**
  * StateListenerRegistry provides a reliable way to detect the leaving of a
@@ -127,7 +139,7 @@ MiddlewareRegistry.register(({ dispatch, getState }) => next => action => {
     }
 
     case START_LOCAL_RECORDING: {
-        const { localRecording } = getState()['features/base/config'];
+        const { transcription } = getState()['features/base/config'];
         const { onlySelf } = action;
 
         LocalRecordingManager.startLocalRecording({
@@ -140,8 +152,16 @@ MiddlewareRegistry.register(({ dispatch, getState }) => next => action => {
                 titleKey: 'dialog.recording'
             };
 
-            if (localRecording?.notifyAllParticipants && !onlySelf) {
+            if (!onlySelf) {
                 dispatch(playSound(RECORDING_ON_SOUND_ID));
+
+                // Live transcription gives the per-speaker transcript saved next
+                // to the recording; Jicofo invites the transcriber when any
+                // participant requests it.
+                if (transcription?.enabled && !getState()['features/subtitles']._requestingSubtitles) {
+                    transcriptionRequestedByRecording = true;
+                    dispatch(setRequestingSubtitles(true, false, null));
+                }
             }
             dispatch(showNotification(props, NOTIFICATION_TIMEOUT_TYPE.MEDIUM));
             dispatch(showNotification({
@@ -156,14 +176,18 @@ MiddlewareRegistry.register(({ dispatch, getState }) => next => action => {
             }
         })
         .catch(err => {
+            if (err.message === LOCAL_RECORDING_ERROR.CANCELLED
+                    || err.message === LOCAL_RECORDING_ERROR.ALREADY_RUNNING) {
+                // The user closed the folder picker, or double-clicked start.
+                return;
+            }
             logger.error('Capture failed', err);
 
             let descriptionKey = 'recording.error';
 
-            if (err.message === 'WrongSurfaceSelected') {
-                descriptionKey = 'recording.surfaceError';
-
-            } else if (err.message === 'NoLocalStreams') {
+            if (err.message === LOCAL_RECORDING_ERROR.NO_FOLDER_ACCESS) {
+                descriptionKey = 'recording.noFolderAccess';
+            } else if (err.message === LOCAL_RECORDING_ERROR.NO_LOCAL_STREAMS) {
                 descriptionKey = 'recording.noStreams';
             } else if (err.message === 'NoMicTrack') {
                 descriptionKey = 'recording.noMicPermission';
@@ -184,13 +208,15 @@ MiddlewareRegistry.register(({ dispatch, getState }) => next => action => {
     }
 
     case STOP_LOCAL_RECORDING: {
-        const { localRecording } = getState()['features/base/config'];
-
         if (LocalRecordingManager.isRecordingLocally()) {
             LocalRecordingManager.stopLocalRecording();
             dispatch(updateLocalRecordingStatus(false));
-            if (localRecording?.notifyAllParticipants && !LocalRecordingManager.selfRecording) {
+            if (!LocalRecordingManager.selfRecording.on) {
                 dispatch(playSound(RECORDING_OFF_SOUND_ID));
+            }
+            if (transcriptionRequestedByRecording) {
+                transcriptionRequestedByRecording = false;
+                dispatch(setRequestingSubtitles(false, false, null));
             }
             if (typeof APP !== 'undefined') {
                 APP.API.notifyRecordingStatusChanged(
@@ -305,17 +331,25 @@ MiddlewareRegistry.register(({ dispatch, getState }) => next => action => {
 
         break;
     }
-    case TRACK_ADDED: {
-        const { track } = action;
+    case TRACK_ADDED:
+    case TRACK_REMOVED:
+    case TRACK_UPDATED:
+    case SET_SCREENSHARE_TRACKS:
+        LocalRecordingManager.isRecordingLocally() && LocalRecordingManager.syncSources();
+        break;
 
-        if (LocalRecordingManager.isRecordingLocally()
-                && track.mediaType === MEDIA_TYPE.AUDIO && track.local) {
-            const audioTrack = track.jitsiTrack.track;
-
-            LocalRecordingManager.addAudioTrackToLocalRecording(audioTrack);
+    case ENDPOINT_MESSAGE_RECEIVED:
+        if (LocalRecordingManager.isRecordingLocally() && action.participant?.isHidden?.()) {
+            LocalRecordingManager.onTranscriptionResult(action.data);
         }
         break;
-    }
+
+    case NON_PARTICIPANT_MESSAGE_RECEIVED:
+        if (LocalRecordingManager.isRecordingLocally() && action.id === TRANSCRIBER_ID) {
+            LocalRecordingManager.onTranscriptionResult(action.json);
+        }
+        break;
+
     case PARTICIPANT_UPDATED: {
         const { id, role } = action.participant;
         const state = getState();
