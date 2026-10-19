@@ -27,6 +27,7 @@ export type ToolbarButton = 'camera' |
     'filesharing' |
     'filmstrip' |
     'fullscreen' |
+    'popout' |
     'hangup' |
     'help' |
     'highlight' |

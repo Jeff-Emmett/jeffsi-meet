@@ -1,7 +1,7 @@
 import { batch } from 'react-redux';
 
 import { IStore } from '../../app/types';
-import { CHAT_SIZE } from '../../chat/constants';
+import { CHAT_SIZE, SMALL_WIDTH_THRESHOLD } from '../../chat/constants';
 import { getParticipantsPaneWidth } from '../../participants-pane/functions';
 
 import {
@@ -45,11 +45,20 @@ export function clientResized(clientWidth: number, clientHeight: number) {
             const state = getState();
             const { isOpen: isChatOpen, width } = state['features/chat'];
 
-            if (isChatOpen) {
-                availableWidth -= width?.current ?? CHAT_SIZE;
-            }
+            // The chat and participants panes sit BESIDE the video only above
+            // SMALL_WIDTH_THRESHOLD; at or below it both become fixed full-screen
+            // overlays (their `@media (max-width: 580px)` styles). Subtracting their
+            // width there left a phone ~80px of "video space", which tripped
+            // reducedUI - and reducedUI makes <Chat> render nothing, so on phones
+            // tapping Chat opened it in state but nothing ever appeared (and the
+            // toolbox and filmstrip were disabled behind it).
+            if (clientWidth > SMALL_WIDTH_THRESHOLD) {
+                if (isChatOpen) {
+                    availableWidth -= width?.current ?? CHAT_SIZE;
+                }
 
-            availableWidth -= getParticipantsPaneWidth(state);
+                availableWidth -= getParticipantsPaneWidth(state);
+            }
 
             dispatch(setReducedUI(availableWidth, clientHeight));
         }

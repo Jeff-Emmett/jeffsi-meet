@@ -69,6 +69,7 @@ import { default as IconPin } from './pin.svg';
 import { default as IconPinned } from './pinned.svg';
 import { default as IconPlay } from './play.svg';
 import { default as IconPlus } from './plus.svg';
+import { default as IconPopOut } from './pop-out.svg';
 import { default as IconRaiseHand } from './raise-hand.svg';
 import { default as IconRecord } from './record.svg';
 import { default as IconReply } from './reply.svg';
@@ -141,6 +142,7 @@ export const DEFAULT_ICON: Record<string, any> = {
     IconEdit,
     IconEnlarge,
     IconEnterFullscreen,
+    IconPopOut,
     IconEnvelope,
     IconEmotionsAngry,
     IconEmotionsDisgusted,

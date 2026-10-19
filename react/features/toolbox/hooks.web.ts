@@ -70,6 +70,7 @@ import AudioSettingsButton from './components/web/AudioSettingsButton';
 import CustomOptionButton from './components/web/CustomOptionButton';
 import FullscreenButton from './components/web/FullscreenButton';
 import LinkToSalesforceButton from './components/web/LinkToSalesforceButton';
+import PopOutButton from './components/web/PopOutButton';
 import ProfileButton from './components/web/ProfileButton';
 import ShareDesktopButton from './components/web/ShareDesktopButton';
 import ToggleCameraButton from './components/web/ToggleCameraButton';
@@ -132,6 +133,12 @@ const videoQuality = {
 const fullscreen = {
     key: 'fullscreen',
     Content: FullscreenButton,
+    group: 2
+};
+
+const popout = {
+    key: 'popout',
+    Content: PopOutButton,
     group: 2
 };
 
@@ -311,6 +318,7 @@ export function useToolboxButtons(
         'toggle-camera': toggleCameraButton,
         videoquality: videoQuality,
         fullscreen: _fullscreen,
+        popout,
         security,
         closedcaptions: cc,
         polls,

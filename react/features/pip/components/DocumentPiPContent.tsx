@@ -7,11 +7,24 @@ import { IReduxState, IStore } from '../../app/types';
 import { getAvatarFont, getAvatarInitialsColor } from '../../base/avatar/components/web/styles';
 import { leaveConference } from '../../base/conference/actions';
 import Icon from '../../base/icons/components/Icon';
-import { IconArrowBack, IconArrowDown, IconHangup, IconMic, IconMicSlash, IconVideo, IconVideoOff } from '../../base/icons/svg';
+import {
+    IconArrowBack,
+    IconArrowDown,
+    IconHangup,
+    IconMic,
+    IconMicSlash,
+    IconScreenshare,
+    IconVideo,
+    IconVideoOff
+} from '../../base/icons/svg';
+import JitsiMeetJS from '../../base/lib-jitsi-meet/_';
 import { MEDIA_TYPE } from '../../base/media/constants';
 import { isLocalTrackMuted } from '../../base/tracks/functions.any';
 import { getDisplayNameColor } from '../../display-name/components/web/styles';
 import { getThumbnailBackgroundColor } from '../../filmstrip/functions.web';
+import { startScreenShareFlow } from '../../screen-share/actions.web';
+import { isScreenVideoShared } from '../../screen-share/functions';
+import { isDesktopShareButtonDisabled } from '../../toolbox/functions.web';
 import { exitDocumentPiP, toggleAudioFromPiP, toggleDocumentPiPMinimized, toggleVideoFromPiP } from '../actions';
 import { getDocumentPiPWindow } from '../functions';
 import { useCanvasAvatar, usePiPParticipantAndTrack, usePiPTrackAttachment } from '../hooks';
@@ -81,6 +94,13 @@ const useStyles = makeStyles()(() => {
         toolbarButtonHangup: {
             background: '#e04b57'
         },
+        toolbarButtonActive: {
+            background: '#246fe5'
+        },
+        toolbarButtonDisabled: {
+            opacity: 0.4,
+            cursor: 'default'
+        },
         toolbarButtonHangupArmed: {
             width: 'auto',
             padding: '0 12px',
@@ -118,6 +138,9 @@ const DocumentPiPContent: React.FC = () => {
         isLocalTrackMuted(state['features/base/tracks'], MEDIA_TYPE.AUDIO));
     const videoMuted = useSelector((state: IReduxState) =>
         isLocalTrackMuted(state['features/base/tracks'], MEDIA_TYPE.VIDEO));
+    const screensharing = useSelector((state: IReduxState) => Boolean(isScreenVideoShared(state)));
+    const canShareScreen = useSelector((state: IReduxState) =>
+        JitsiMeetJS.isDesktopSharingEnabled() && !isDesktopShareButtonDisabled(state));
 
     const { customAvatarBackgrounds, displayName, participant, shouldShowAvatar, videoTrack } = usePiPParticipantAndTrack();
 
@@ -172,6 +195,15 @@ const DocumentPiPContent: React.FC = () => {
     const handleToggleVideo = useCallback(() => {
         dispatch(toggleVideoFromPiP());
     }, [ dispatch ]);
+
+    // Same flow as the toolbar's share button. The click happens in the popout,
+    // and Chrome propagates that user activation to the opener, which is where
+    // getDisplayMedia() actually runs.
+    const handleToggleScreenshare = useCallback(() => {
+        if (canShareScreen || screensharing) {
+            dispatch(startScreenShareFlow(!screensharing));
+        }
+    }, [ dispatch, canShareScreen, screensharing ]);
 
     // The popout is a tiny window with hang-up right beside mic and camera, so
     // one mis-click ended the call. The first click only ARMS it ("Leave?");
@@ -248,6 +280,17 @@ const DocumentPiPContent: React.FC = () => {
                             color = '#fff'
                             size = { 18 }
                             src = { videoMuted ? IconVideoOff : IconVideo } />
+                    </div>
+                    <div
+                        className = { `${classes.toolbarButton} ${screensharing ? classes.toolbarButtonActive : ''} ${
+                            canShareScreen || screensharing ? '' : classes.toolbarButtonDisabled}` }
+                        onClick = { handleToggleScreenshare }
+                        title = { screensharing ? 'Stop sharing your screen' : 'Share your screen' }>
+                        <Icon
+                            ariaLabel = { screensharing ? 'Stop sharing your screen' : 'Share your screen' }
+                            color = '#fff'
+                            size = { 18 }
+                            src = { IconScreenshare } />
                     </div>
                     <div
                         className = { `${classes.toolbarButton} ${classes.toolbarButtonHangup} ${

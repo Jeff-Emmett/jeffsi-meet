@@ -1429,7 +1429,9 @@
             "videomute": "Stop camera",
             "videomuteGUMPending": "Connecting your camera",
             "videounmute": "Start camera",
-            "wave": "Wave"
+            "wave": "Wave",
+            "popOut": "Pop the call out into a floating window",
+            "popIn": "Return the call to the page"
         },
         "addPeople": "Add people to your call",
         "advancedAudioSettings": {
@@ -1559,7 +1561,9 @@
         "videomute": "Stop camera",
         "videomuteGUMPending": "Connecting your camera",
         "videounmute": "Start camera",
-        "wave": "Wave"
+        "wave": "Wave",
+        "popOut": "Pop out",
+        "popIn": "Return to page"
     },
     "transcribing": {
         "ccButtonTooltip": "Start / Stop subtitles",

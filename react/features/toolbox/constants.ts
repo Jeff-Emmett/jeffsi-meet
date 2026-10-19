@@ -156,6 +156,7 @@ export const TOOLBAR_BUTTONS: ToolbarButton[] = [
     'filesharing',
     'filmstrip',
     'fullscreen',
+    'popout',
     'hangup',
     'help',
     'highlight',
