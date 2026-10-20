@@ -275,6 +275,27 @@ export function getVirtualScreenshareParticipantOwnerId(id: string) {
 }
 
 /**
+ * Whether the participant asked never to be recorded or transcribed (a global,
+ * per-user setting broadcast as the `recordingOptOut` participant property).
+ * A virtual screenshare tile follows its owner.
+ *
+ * @param {IStateful} stateful - The redux state or getState.
+ * @param {string} id - The participant (or virtual screenshare) id.
+ * @returns {boolean}
+ */
+export function isRecordingOptedOut(stateful: IStateful, id?: string): boolean {
+    if (!id) {
+        return false;
+    }
+    const participant = getParticipantById(stateful, id);
+    const owner = participant && isScreenShareParticipant(participant)
+        ? getParticipantById(stateful, getVirtualScreenshareParticipantOwnerId(id))
+        : participant;
+
+    return Boolean(owner?.recordingOptOut);
+}
+
+/**
  * Returns the Map with fake participants.
  *
  * @param {(Function|Object)} stateful - The (whole) redux state, or redux's

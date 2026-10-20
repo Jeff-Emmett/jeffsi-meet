@@ -20,6 +20,7 @@ import {
     getParticipantById,
     getParticipantDisplayName,
     isLocalScreenshareParticipant,
+    isRecordingOptedOut,
     isScreenShareParticipant
 } from '../../../react/features/base/participants/functions';
 import { getHideSelfView } from '../../../react/features/base/settings/functions.any';
@@ -305,9 +306,13 @@ export default class LargeVideoManager {
             // progress.
             const legacyScreenshare = videoType === VIDEO_TYPE.DESKTOP && !isScreenShareParticipant(participant);
 
+            // A recorder (Jibri) must not show people who opted out of recording.
+            const hiddenFromRecorder = state['features/base/config'].iAmRecorder && isRecordingOptedOut(state, id);
+
             const showAvatar
                 = isVideoContainer
-                    && ((isAudioOnly && videoType !== VIDEO_TYPE.DESKTOP) || !isVideoRenderable || legacyScreenshare);
+                    && ((isAudioOnly && videoType !== VIDEO_TYPE.DESKTOP) || !isVideoRenderable || legacyScreenshare
+                        || hiddenFromRecorder);
 
             logger.debug(`scheduleLargeVideoUpdate: Remote track ${videoTrack?.jitsiTrack}, isVideoMuted=${
                 isVideoMuted}, streamingStatusActive=${streamingStatusActive}, isVideoRenderable=${

@@ -214,4 +214,74 @@ test.describe('Local recording', () => {
         await recorder.context.close();
         await other.context.close();
     });
+
+    test('leaves out a participant who opted out of recording', async ({ browser }) => {
+        test.setTimeout(150000);
+
+        const recorder = await newParticipant(browser, 'Rita Recorder');
+        const other = await newParticipant(browser, 'Otto Other');
+
+        await stubFolderPicker(recorder.page);
+        await joinRoom(recorder.page, recorder.name);
+        await joinRoom(other.page, other.name);
+
+        // Otto's global setting: never record or transcribe me.
+        await other.page.evaluate(() => {
+            // @ts-ignore
+            APP.store.dispatch({ type: 'SETTINGS_UPDATED', settings: { recordingOptOut: true } });
+        });
+        await expect(recorder.page.getByText('has opted out of recording')).toBeVisible({ timeout: 15000 });
+
+        await recorder.page.evaluate(() => {
+            // @ts-ignore
+            APP.store.dispatch({ type: 'START_LOCAL_RECORDING', onlySelf: false });
+        });
+        await recorder.page.waitForTimeout(6000);
+        await recorder.page.evaluate(otherName => {
+            // @ts-ignore
+            const remote = [ ...APP.store.getState()['features/base/participants'].remote.values() ][0];
+
+            // @ts-ignore
+            APP.store.dispatch({
+                type: 'NON_PARTICIPANT_MESSAGE_RECEIVED',
+                id: 'transcriber',
+                json: {
+                    type: 'transcription-result',
+                    is_interim: false,
+                    participant: { id: remote.id, name: otherName },
+                    timestamp: new Date().toISOString(),
+                    transcript: [ { text: 'this must not be saved' } ]
+                }
+            });
+        }, other.name);
+        await recorder.page.waitForTimeout(6000);
+        await recorder.page.evaluate(() => {
+            // @ts-ignore
+            APP.store.dispatch({ type: 'STOP_LOCAL_RECORDING' });
+        });
+
+        const saved = await recorder.page.evaluate(async () => {
+            for (let i = 0; i < 40; i++) {
+                const root = await navigator.storage.getDirectory();
+
+                for await (const [ , dir ] of (root as any).entries()) {
+                    try {
+                        const read = async (n: string) => (await (await dir.getFileHandle(n)).getFile()).text();
+
+                        return { manifest: JSON.parse(await read('manifest.json')), md: await read('transcript.md') };
+                    } catch { /* not yet */ }
+                }
+                await new Promise(r => setTimeout(r, 500));
+            }
+
+            return null;
+        });
+
+        expect(saved).toBeTruthy();
+        expect(saved!.manifest.stems.map((st: any) => st.name)).toEqual([ 'Rita Recorder' ]);
+        expect(saved!.md).not.toContain('this must not be saved');
+
+        await recorder.context.close();
+        await other.context.close();
+    });
 });

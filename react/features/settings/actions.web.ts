@@ -152,6 +152,10 @@ export function submitMoreTab(newState: any) {
         if (newState.showSubtitlesOnStage !== currentState.showSubtitlesOnStage) {
             dispatch(updateSettings({ showSubtitlesOnStage: newState.showSubtitlesOnStage }));
         }
+
+        if (newState.recordingOptOut !== currentState.recordingOptOut) {
+            dispatch(updateSettings({ recordingOptOut: newState.recordingOptOut }));
+        }
     };
 }
 

@@ -481,6 +481,13 @@ export interface IConfig {
         disable?: boolean;
         disableSelfRecording?: boolean;
         notifyAllParticipants?: boolean;
+
+        /**
+         * Set by an embedder (rMeets) when the user opted out of recording and
+         * transcription in its own settings. ORed with the user's jeffsi setting:
+         * it can opt a user out, never back in.
+         */
+        optOut?: boolean;
     };
     localSubject?: string;
     locationURL?: URL;

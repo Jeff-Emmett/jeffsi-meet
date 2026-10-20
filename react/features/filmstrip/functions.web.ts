@@ -10,6 +10,7 @@ import {
     getParticipantCount,
     getParticipantCountWithFake,
     getPinnedParticipant,
+    isRecordingOptedOut,
     isScreenShareParticipant
 } from '../base/participants/functions';
 import { toState } from '../base/redux/functions';
@@ -118,6 +119,11 @@ export function isVideoPlayable(stateful: IStateful, id: string) {
     const videoTrack = getVideoTrackByParticipant(state, participant);
     const isAudioOnly = Boolean(state['features/base/audio-only'].enabled);
     let isPlayable = false;
+
+    // A recorder (Jibri) shows people who opted out of recording as their avatar.
+    if (state['features/base/config'].iAmRecorder && isRecordingOptedOut(state, participant?.id)) {
+        return false;
+    }
 
     if (isLocal) {
         const isVideoMuted = isLocalTrackMuted(tracks, MEDIA_TYPE.VIDEO);

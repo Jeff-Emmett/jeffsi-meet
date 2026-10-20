@@ -6,6 +6,7 @@ import { MEET_FEATURES } from '../base/jwt/constants';
 import { isJwtFeatureEnabled } from '../base/jwt/functions';
 import JitsiMeetJS from '../base/lib-jitsi-meet';
 import { TRANSCRIBER_ID } from '../base/participants/constants';
+import { isRecordingOptedOut } from '../base/participants/functions';
 import MiddlewareRegistry from '../base/redux/MiddlewareRegistry';
 import { showErrorNotification } from '../notifications/actions';
 import { RECORDING_METADATA_ID } from '../recording/constants';
@@ -144,6 +145,11 @@ function _endpointMessageReceived(store: IStore, next: Function, action: AnyActi
     };
     const { timestamp } = json;
     const participantId = participant.id;
+
+    // Whoever opted out of recording/transcription is not captioned either.
+    if (isRecordingOptedOut(state, participantId)) {
+        return next(action);
+    }
 
     // Handle transcript messages
     const language = state['features/base/conference'].conference

@@ -22,7 +22,7 @@ import {
     setVideoUnmutePermissions
 } from '../base/media/actions';
 import { PARTICIPANT_UPDATED } from '../base/participants/actionTypes';
-import { updateLocalRecordingStatus } from '../base/participants/actions';
+import { participantUpdated, updateLocalRecordingStatus } from '../base/participants/actions';
 import { PARTICIPANT_ROLE, TRANSCRIBER_ID } from '../base/participants/constants';
 import { getLocalParticipant, getParticipantDisplayName } from '../base/participants/functions';
 import MiddlewareRegistry from '../base/redux/MiddlewareRegistry';
@@ -87,6 +87,30 @@ StateListenerRegistry.register(
         if (!conference) {
             dispatch(clearRecordingSessions());
         }
+    }
+);
+
+/**
+ * Broadcasts the user's global "never record or transcribe me" setting into
+ * every conference they join, and whenever they change it.
+ */
+StateListenerRegistry.register(
+    /* selector */ state => [
+        getCurrentConference(state),
+        Boolean(state['features/base/settings'].recordingOptOut
+            || state['features/base/config'].localRecording?.optOut)
+    ],
+    /* listener */ ([ conference, optOut ], { dispatch, getState }) => {
+        const localId = getLocalParticipant(getState())?.id;
+
+        conference?.setLocalParticipantProperty('recordingOptOut', optOut ? 'true' : 'false');
+        localId && dispatch(participantUpdated({
+            id: localId,
+            local: true,
+            recordingOptOut: optOut
+        }));
+    }, {
+        deepEquals: true
     }
 );
 

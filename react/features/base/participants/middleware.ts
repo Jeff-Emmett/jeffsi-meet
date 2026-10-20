@@ -513,6 +513,8 @@ StateListenerRegistry.register(
                     _localRecordingUpdated(store, conference, participant.getId(), Boolean(value)),
                 'raisedHand': (participant: IJitsiParticipant, value: string) =>
                     _raiseHandUpdated(store, conference, participant.getId(), value),
+                'recordingOptOut': (participant: IJitsiParticipant, value: string) =>
+                    _recordingOptOutUpdated(store, conference, participant.getId(), value === 'true'),
                 'region': (participant: IJitsiParticipant, value: string) =>
                     store.dispatch(participantUpdated({
                         conference,
@@ -799,6 +801,37 @@ function _localRecordingUpdated({ dispatch, getState }: IStore, conference: IJit
     dispatch(playSound(newValue ? RECORDING_ON_SOUND_ID : RECORDING_OFF_SOUND_ID));
 }
 
+
+/**
+ * Handles a remote participant's "never record or transcribe me" setting. Everyone
+ * is told, so a host knows whose audio and video recordings will leave out.
+ *
+ * @param {Function} store - The redux store.
+ * @param {Object} conference - The conference for which we got an update.
+ * @param {string} participantId - The participant.
+ * @param {boolean} optOut - The new value.
+ * @returns {void}
+ */
+function _recordingOptOutUpdated({ dispatch, getState }: IStore, conference: IJitsiConference,
+        participantId: string, optOut: boolean) {
+    if (Boolean(getParticipantById(getState(), participantId)?.recordingOptOut) === optOut) {
+        return;
+    }
+
+    dispatch(participantUpdated({
+        conference,
+        id: participantId,
+        recordingOptOut: optOut
+    }));
+
+    if (optOut) {
+        dispatch(showNotification({
+            titleKey: 'notify.somebody',
+            title: getParticipantDisplayName(getState(), participantId),
+            descriptionKey: 'recording.optedOut'
+        }, NOTIFICATION_TIMEOUT_TYPE.MEDIUM));
+    }
+}
 
 /**
  * Handles a raise hand status update.

@@ -37,6 +37,7 @@ export interface IParticipant {
     pinned?: boolean;
     presence?: string;
     raisedHandTimestamp?: number;
+    recordingOptOut?: boolean;
     region?: string;
     remoteControlSessionStatus?: boolean;
     role?: string;

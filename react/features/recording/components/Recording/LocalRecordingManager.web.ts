@@ -8,8 +8,10 @@ import { browser } from '../../../base/lib-jitsi-meet';
 import { MEDIA_TYPE, VIDEO_TYPE } from '../../../base/media/constants';
 import {
     getLocalParticipant,
+    getParticipantById,
     getParticipantDisplayName,
-    getRemoteParticipants
+    getRemoteParticipants,
+    isRecordingOptedOut
 } from '../../../base/participants/functions';
 import { IParticipant } from '../../../base/participants/types';
 import { getLocalTrack, getTrackState } from '../../../base/tracks/functions';
@@ -281,14 +283,20 @@ const LocalRecordingManager: ILocalRecordingManager & {
         const tracks = getTrackState(state);
         const localId = getLocalParticipant(state)?.id ?? 'local';
         const wanted = new Map<string, { participantId: string; track: MediaStreamTrack; }>();
+        // People who opted out of recording are never captured, not even silently.
         const want = (track: MediaStreamTrack | undefined, participantId: string) => {
-            track?.readyState === 'live' && wanted.set(track.id, { participantId, track });
+            track?.readyState === 'live' && !isRecordingOptedOut(state, participantId)
+                && wanted.set(track.id, { participantId, track });
         };
 
         want(getRawMicTrack(getLocalTrack(tracks, MEDIA_TYPE.AUDIO)?.jitsiTrack), localId);
         want(state['features/screen-share']?.desktopAudioTrack?.getTrack?.(), localId);
         for (const t of tracks) {
-            if (!t.local && t.mediaType === MEDIA_TYPE.AUDIO && t.jitsiTrack) {
+            const owner = t.local ? undefined : getParticipantById(state, t.participantId);
+
+            // Only real, visible participants: hidden service participants (the
+            // Jigasi transcriber, a Jibri) publish tracks too but are not people.
+            if (owner && !owner.fakeParticipant && t.mediaType === MEDIA_TYPE.AUDIO && t.jitsiTrack) {
                 want(t.jitsiTrack.getTrack(), t.participantId);
             }
         }
@@ -384,6 +392,12 @@ const LocalRecordingManager: ILocalRecordingManager & {
         for (const p of participants) {
             const own = byParticipant.get(p.id);
             const name = getParticipantDisplayName(state, p.id);
+
+            if (isRecordingOptedOut(state, p.id)) {
+                sources.push({ id: p.id, isScreen: false, name: `${name} (not recorded)`, speaking: false });
+                continue;
+            }
+
             const screen = liveTrack(own?.screen);
 
             sources.push({
@@ -480,6 +494,10 @@ const LocalRecordingManager: ILocalRecordingManager & {
             return;
         }
         const speakerId = json.participant?.id ?? 'unknown';
+
+        if (this._store && isRecordingOptedOut(this._store.getState(), speakerId)) {
+            return;
+        }
 
         this._transcript.add({
             language: json.language,

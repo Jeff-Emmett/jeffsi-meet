@@ -139,6 +139,7 @@ export function getMoreTabProps(stateful: IStateful) {
         languages: LANGUAGES,
         maxStageParticipants: state['features/base/settings'].maxStageParticipants,
         showLanguageSettings: configuredTabs.includes('language'),
+        recordingOptOut: Boolean(state['features/base/settings'].recordingOptOut),
         showSubtitlesOnStage: state['features/base/settings'].showSubtitlesOnStage,
         stageFilmstripEnabled
     };

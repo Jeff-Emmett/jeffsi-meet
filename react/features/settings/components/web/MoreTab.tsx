@@ -64,6 +64,11 @@ export interface IProps extends AbstractDialogTabProps, WithTranslation {
     maxStageParticipants: number;
 
     /**
+     * Whether the user asked never to be recorded or transcribed, in any meeting.
+     */
+    recordingOptOut: boolean;
+
+    /**
      * Whether or not to display the language select dropdown.
      */
     showLanguageSettings: boolean;
@@ -126,6 +131,7 @@ class MoreTab extends AbstractDialogTab<IProps, any> {
         this._onMaxStageParticipantsSelect = this._onMaxStageParticipantsSelect.bind(this);
         this._onHideSelfViewChanged = this._onHideSelfViewChanged.bind(this);
         this._onShowSubtitlesOnStageChanged = this._onShowSubtitlesOnStageChanged.bind(this);
+        this._onRecordingOptOutChanged = this._onRecordingOptOutChanged.bind(this);
         this._onLanguageItemSelect = this._onLanguageItemSelect.bind(this);
     }
 
@@ -141,6 +147,7 @@ class MoreTab extends AbstractDialogTab<IProps, any> {
             disableHideSelfView,
             iAmVisitor,
             hideSelfView,
+            recordingOptOut,
             showLanguageSettings,
             showSubtitlesOnStage,
             t
@@ -166,6 +173,12 @@ class MoreTab extends AbstractDialogTab<IProps, any> {
                     label = { t('settings.showSubtitlesOnStage') }
                     name = 'show-subtitles-button'
                     onChange = { this._onShowSubtitlesOnStageChanged } /> }
+                {!iAmVisitor && <Checkbox
+                    checked = { recordingOptOut }
+                    className = { classes.checkbox }
+                    label = { t('settings.recordingOptOut') }
+                    name = 'recording-opt-out'
+                    onChange = { this._onRecordingOptOutChanged } /> }
                 {showLanguageSettings && this._renderLanguageSelect()}
             </div>
         );
@@ -193,6 +206,16 @@ class MoreTab extends AbstractDialogTab<IProps, any> {
      */
     _onHideSelfViewChanged({ target: { checked } }: React.ChangeEvent<HTMLInputElement>) {
         super._onChange({ hideSelfView: checked });
+    }
+
+    /**
+     * Callback invoked when the "never record or transcribe me" option changes.
+     *
+     * @param {Object} e - The change event.
+     * @returns {void}
+     */
+    _onRecordingOptOutChanged({ target: { checked } }: React.ChangeEvent<HTMLInputElement>) {
+        super._onChange({ recordingOptOut: checked });
     }
 
     /**

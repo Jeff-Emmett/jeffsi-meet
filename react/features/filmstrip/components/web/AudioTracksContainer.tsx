@@ -4,12 +4,20 @@ import { connect } from 'react-redux';
 import { IReduxState } from '../../../app/types';
 import AudioTrack from '../../../base/media/components/web/AudioTrack';
 import { MEDIA_TYPE } from '../../../base/media/constants';
+import { isRecordingOptedOut } from '../../../base/participants/functions';
 import { ITrack } from '../../../base/tracks/types';
 
 /**
  * The type of the React {@code Component} props of {@link AudioTracksContainer}.
  */
 interface IProps {
+
+    /**
+     * Comma-joined ids of participants whose audio a recorder (Jibri) must not
+     * play, because they opted out of recording. A string so connect() only
+     * re-renders when the set actually changes.
+     */
+    _excluded: string;
 
     /**
      * All media tracks stored in redux.
@@ -24,8 +32,10 @@ interface IProps {
  * @returns {Array<ReactElement>}
  */
 function AudioTracksContainer(props: IProps) {
-    const { _tracks } = props;
-    const remoteAudioTracks = _tracks.filter(t => !t.local && t.mediaType === MEDIA_TYPE.AUDIO);
+    const { _excluded, _tracks } = props;
+    const excluded = new Set(_excluded.split(','));
+    const remoteAudioTracks = _tracks.filter(t => !t.local && t.mediaType === MEDIA_TYPE.AUDIO
+        && !excluded.has(t.participantId));
 
     return (
         <div>
@@ -61,8 +71,17 @@ function _mapStateToProps(state: IReduxState) {
     // find the corresponding track inside the AudioTrack's mapStateToProps. But currently this will be very
     // inefficient because features/base/tracks is an array and in order to find a track by participant ID
     // we need to go through the array. Introducing a map participantID -> track could be beneficial in this case.
+    const tracks = state['features/base/tracks'];
+
+    // Jibri records what this page plays, so opted-out people are simply not played.
+    const excluded = state['features/base/config'].iAmRecorder
+        ? tracks.filter(t => isRecordingOptedOut(state, t.participantId)).map(t => t.participantId)
+            .join(',')
+        : '';
+
     return {
-        _tracks: state['features/base/tracks']
+        _excluded: excluded,
+        _tracks: tracks
     };
 }
 
