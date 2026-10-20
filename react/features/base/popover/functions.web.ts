@@ -51,8 +51,15 @@ const getTopBotStartAlign = (bounds: DOMRect) => {
 };
 
 const getTopBotMidAlign = (bounds: DOMRect, size: DOMRectReadOnly) => {
+    const centered = window.innerWidth - bounds.x - (bounds.width / 2) - (size.width / 2);
+
+    // Centered on a trigger near a screen edge (the More button on a tablet or
+    // a phone in landscape), the popover ran off that edge; keep it inside.
+    const margin = 8;
+    const right = Math.min(Math.max(centered, margin), Math.max(margin, window.innerWidth - size.width - margin));
+
     return {
-        right: `${window.innerWidth - bounds.x - (bounds.width / 2) - (size.width / 2)}px`
+        right: `${right}px`
     };
 };
 
