@@ -1,13 +1,13 @@
 import React, { useEffect, useRef } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { makeStyles } from 'tss-react/mui';
 
-import { IStore } from '../../app/types';
+import { IReduxState, IStore } from '../../app/types';
 import { getAvatarFont, getAvatarInitialsColor } from '../../base/avatar/components/web/styles';
 import { getDisplayNameColor } from '../../display-name/components/web/styles';
 import { getThumbnailBackgroundColor } from '../../filmstrip/functions.web';
 import { handlePiPLeaveEvent, handlePipEnterEvent, handleWindowBlur, handleWindowFocus } from '../actions';
-import { useCanvasAvatar, usePiPParticipantAndTrack, usePiPTrackAttachment } from '../hooks';
+import { useCanvasAvatar, useChatCard, usePiPParticipantAndTrack, usePiPTrackAttachment } from '../hooks';
 
 const useStyles = makeStyles()(() => {
     return {
@@ -51,8 +51,17 @@ const PiPVideoElement: React.FC = () => {
         displayNameColor
     });
 
-    // Attach/detach the real video track or canvas avatar stream to the video element.
-    usePiPTrackAttachment(videoRef, videoTrack, shouldShowAvatar, canvasStreamRef);
+    // While the call is in the video PiP window, incoming chat briefly takes
+    // over the picture - that window shows one video and nothing else.
+    const isPiPActive = useSelector((state: IReduxState) => Boolean(state['features/pip']?.isPiPActive));
+    const { chatStreamRef, showChatCard } = useChatCard(isPiPActive, fontFamily);
+
+    // Attach/detach the real video track, canvas avatar or chat card stream to the video element.
+    usePiPTrackAttachment(
+        videoRef,
+        videoTrack,
+        shouldShowAvatar || showChatCard,
+        showChatCard ? chatStreamRef : canvasStreamRef);
 
     /**
      * Effect: Auto Picture-in-Picture entry + focus-to-exit.

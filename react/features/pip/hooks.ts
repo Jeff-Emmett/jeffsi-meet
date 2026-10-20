@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 
 import { IReduxState } from '../app/types';
@@ -6,12 +6,14 @@ import IconUserSVG from '../base/icons/svg/user.svg?raw';
 import { getLocalParticipant, getParticipantDisplayName } from '../base/participants/functions';
 import { IParticipant } from '../base/participants/types';
 import { ITrack } from '../base/tracks/types';
+import { MESSAGE_TYPE_LOCAL } from '../chat/constants';
+import { isChatDisabled } from '../chat/functions';
 import { isTrackStreamingStatusActive } from '../connection-indicator/functions';
 import { TILE_ASPECT_RATIO } from '../filmstrip/constants';
 import { getLargeVideoParticipant } from '../large-video/functions';
 import { isPrejoinPageVisible } from '../prejoin/functions.any';
 
-import { getPiPVideoTrack, renderAvatarOnCanvas } from './functions';
+import { getPiPChatMessages, getPiPVideoTrack, renderAvatarOnCanvas, renderChatOnCanvas } from './functions';
 import logger from './logger';
 
 /**
@@ -125,7 +127,7 @@ export function usePiPTrackAttachment(
                 }
             }
         };
-    }, [ videoTrack, shouldShowAvatar ]);
+    }, [ videoTrack, shouldShowAvatar, canvasStreamRef ]);
 }
 
 /**
@@ -300,5 +302,123 @@ export function useCanvasAvatar(options: IUseCanvasAvatarOptions): IUseCanvasAva
 
     return {
         canvasStreamRef: streamRef
+    };
+}
+
+/**
+ * How long an incoming chat message holds the video PiP picture.
+ */
+const CHAT_CARD_MS = 8000;
+
+/**
+ * A message newer than this is shown when the video PiP opens, so popping out
+ * right after someone wrote doesn't hide what they wrote.
+ */
+const CHAT_CARD_RECENT_MS = 2 * 60 * 1000;
+
+/**
+ * How many messages fit on the chat card.
+ */
+const CHAT_CARD_MAX_MESSAGES = 4;
+
+/**
+ * Result returned by the useChatCard hook.
+ */
+interface IUseChatCardResult {
+    chatStreamRef: React.MutableRefObject<MediaStream | null>;
+    showChatCard: boolean;
+}
+
+/**
+ * Shows chat in the classic video PiP window, which can only display one video.
+ * While {@code enabled}, each incoming message (and a recent one when the PiP
+ * opens) is drawn onto a canvas whose stream briefly replaces the PiP picture.
+ * Phones have no Document PiP, so this is the only way chat reaches a popped-out
+ * call there.
+ *
+ * @param {boolean} enabled - Whether the video PiP is open.
+ * @param {string} fontFamily - Font family for the text.
+ * @returns {IUseChatCardResult}
+ */
+export function useChatCard(enabled: boolean, fontFamily: string): IUseChatCardResult {
+    const allMessages = useSelector((state: IReduxState) => state['features/chat'].messages);
+    const chatDisabled = useSelector(isChatDisabled);
+    const messages = useMemo(() => getPiPChatMessages(allMessages, CHAT_CARD_MAX_MESSAGES), [ allMessages ]);
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const lastShownIdRef = useRef<string | undefined>(undefined);
+    const [ showChatCard, setShowChatCard ] = useState(false);
+
+    useEffect(() => {
+        const canvas = document.createElement('canvas');
+
+        canvas.width = CANVAS_WIDTH;
+        canvas.height = CANVAS_HEIGHT;
+        canvasRef.current = canvas;
+        streamRef.current = canvas.captureStream(CANVAS_FRAME_RATE);
+
+        return () => {
+            streamRef.current?.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+            canvasRef.current = null;
+        };
+    }, []);
+
+    const hideTimerRef = useRef<number | undefined>(undefined);
+
+    useEffect(() => () => window.clearTimeout(hideTimerRef.current), []);
+
+    useEffect(() => {
+        const newest = messages[messages.length - 1];
+
+        if (!enabled || chatDisabled || !newest) {
+            window.clearTimeout(hideTimerRef.current);
+            setShowChatCard(false);
+
+            return;
+        }
+
+        const isNew = newest.messageId !== lastShownIdRef.current;
+        const isRecent = Date.now() - newest.timestamp < CHAT_CARD_RECENT_MS;
+
+        // Your own messages don't need announcing back to you.
+        if (!isNew || !isRecent || newest.messageType === MESSAGE_TYPE_LOCAL) {
+            return;
+        }
+        lastShownIdRef.current = newest.messageId;
+
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+
+        if (!canvas || !ctx) {
+            return;
+        }
+
+        renderChatOnCanvas(canvas, ctx, messages, fontFamily);
+        setShowChatCard(true);
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = window.setTimeout(() => setShowChatCard(false), CHAT_CARD_MS);
+    }, [ enabled, chatDisabled, messages, fontFamily ]);
+
+    // captureStream(0) only emits a frame on requestFrame(), and the PiP video
+    // is switched to this stream after the draw. Keep re-emitting while the
+    // card is up so the element always has a current frame to show.
+    useEffect(() => {
+        if (!showChatCard) {
+            return;
+        }
+
+        const track = streamRef.current?.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void; };
+        const emit = () => track?.requestFrame?.();
+        const interval = window.setInterval(emit, 500);
+
+        emit();
+
+        return () => window.clearInterval(interval);
+    }, [ showChatCard ]);
+
+    return {
+        chatStreamRef: streamRef,
+        showChatCard
     };
 }

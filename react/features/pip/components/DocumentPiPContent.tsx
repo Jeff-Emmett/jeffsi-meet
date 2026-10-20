@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { makeStyles } from 'tss-react/mui';
@@ -11,22 +11,27 @@ import {
     IconArrowBack,
     IconArrowDown,
     IconHangup,
+    IconMessage,
     IconMic,
     IconMicSlash,
     IconScreenshare,
+    IconSend,
     IconVideo,
     IconVideoOff
 } from '../../base/icons/svg';
 import JitsiMeetJS from '../../base/lib-jitsi-meet/_';
 import { MEDIA_TYPE } from '../../base/media/constants';
 import { isLocalTrackMuted } from '../../base/tracks/functions.any';
+import { sendMessage } from '../../chat/actions.any';
+import { MESSAGE_TYPE_LOCAL } from '../../chat/constants';
+import { getMessageText, isChatDisabled } from '../../chat/functions';
 import { getDisplayNameColor } from '../../display-name/components/web/styles';
 import { getThumbnailBackgroundColor } from '../../filmstrip/functions.web';
 import { startScreenShareFlow } from '../../screen-share/actions.web';
 import { isScreenVideoShared } from '../../screen-share/functions';
 import { isDesktopShareButtonDisabled } from '../../toolbox/functions.web';
 import { exitDocumentPiP, toggleAudioFromPiP, toggleDocumentPiPMinimized, toggleVideoFromPiP } from '../actions';
-import { getDocumentPiPWindow } from '../functions';
+import { getDocumentPiPWindow, getPiPChatMessages } from '../functions';
 import { useCanvasAvatar, usePiPParticipantAndTrack, usePiPTrackAttachment } from '../hooks';
 
 const useStyles = makeStyles()(() => {
@@ -61,6 +66,74 @@ const useStyles = makeStyles()(() => {
             position: 'relative' as const,
             minHeight: 0
         },
+        videoWrapperWithChat: {
+            flex: '0 0 40%'
+        },
+        chat: {
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column' as const,
+            minHeight: 0,
+            background: '#131519',
+            borderTop: '1px solid rgba(255, 255, 255, 0.12)'
+        },
+        chatMessages: {
+            flex: 1,
+            overflowY: 'auto' as const,
+            padding: '8px 10px',
+            fontSize: '13px',
+            lineHeight: '18px',
+            color: '#fff',
+            wordBreak: 'break-word' as const
+        },
+        chatEmpty: {
+            color: '#9aa0a6',
+            textAlign: 'center' as const,
+            marginTop: '12px'
+        },
+        chatMessage: {
+            marginBottom: '8px'
+        },
+        chatSender: {
+            color: '#9aa0a6',
+            fontSize: '12px',
+            fontWeight: 600
+        },
+        chatForm: {
+            display: 'flex',
+            gap: '6px',
+            padding: '6px 8px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.12)'
+        },
+        chatInput: {
+            flex: 1,
+            minWidth: 0,
+            background: 'rgba(255, 255, 255, 0.08)',
+            border: '1px solid rgba(255, 255, 255, 0.16)',
+            borderRadius: '6px',
+            color: '#fff',
+            fontSize: '13px',
+            padding: '6px 8px',
+            outline: 'none'
+        },
+        chatSend: {
+            cursor: 'pointer',
+            border: 0,
+            borderRadius: '6px',
+            background: '#246fe5',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 8px'
+        },
+        unreadDot: {
+            position: 'absolute' as const,
+            top: '2px',
+            right: '2px',
+            width: '9px',
+            height: '9px',
+            borderRadius: '50%',
+            background: '#e04b57'
+        },
         video: {
             width: '100%',
             height: '100%',
@@ -75,6 +148,7 @@ const useStyles = makeStyles()(() => {
             flexShrink: 0
         },
         toolbarButton: {
+            position: 'relative' as const,
             cursor: 'pointer',
             borderRadius: '50%',
             width: '36px',
@@ -122,8 +196,9 @@ const HANGUP_ARM_MS = 3000;
 
 /**
  * Content portaled into the Document Picture-in-Picture window: a mini
- * video, a bottom toolbar (mic/camera/hangup), and a top-right header
- * (return to tab / minimize).
+ * video, the meeting chat (read and reply without returning to the tab), a
+ * bottom toolbar (mic/camera/chat/hangup), and a top-right header (return to
+ * tab / minimize).
  *
  * @returns {React.ReactPortal | null}
  */
@@ -141,6 +216,10 @@ const DocumentPiPContent: React.FC = () => {
     const screensharing = useSelector((state: IReduxState) => Boolean(isScreenVideoShared(state)));
     const canShareScreen = useSelector((state: IReduxState) =>
         JitsiMeetJS.isDesktopSharingEnabled() && !isDesktopShareButtonDisabled(state));
+
+    const chatDisabled = useSelector(isChatDisabled);
+    const allMessages = useSelector((state: IReduxState) => state['features/chat'].messages);
+    const messages = useMemo(() => getPiPChatMessages(allMessages), [ allMessages ]);
 
     const { customAvatarBackgrounds, displayName, participant, shouldShowAvatar, videoTrack } = usePiPParticipantAndTrack();
 
@@ -227,6 +306,41 @@ const DocumentPiPContent: React.FC = () => {
         disarmTimer.current = window.setTimeout(() => setHangupArmed(false), HANGUP_ARM_MS);
     }, [ dispatch, hangupArmed ]);
 
+    // Chat starts open: the point of the popout is staying in the meeting
+    // while working elsewhere, and that includes the conversation.
+    const [ chatOpen, setChatOpen ] = useState(true);
+    const [ draft, setDraft ] = useState('');
+    const newestId = messages[messages.length - 1]?.messageId;
+    const [ seenId, setSeenId ] = useState(newestId);
+    const messagesRef = useRef<HTMLDivElement>(null);
+    const showChat = chatOpen && !chatDisabled;
+
+    useEffect(() => {
+        if (showChat) {
+            setSeenId(newestId);
+            messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight });
+        }
+    }, [ showChat, newestId ]);
+
+    const handleToggleChat = useCallback(() => {
+        setChatOpen(open => !open);
+    }, []);
+
+    const handleDraftChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        setDraft(e.target.value);
+    }, []);
+
+    const handleSend = useCallback((e: React.FormEvent) => {
+        e.preventDefault();
+
+        const text = draft.trim();
+
+        if (text) {
+            dispatch(sendMessage(text));
+            setDraft('');
+        }
+    }, [ dispatch, draft ]);
+
     if (!container) {
         return null;
     }
@@ -252,7 +366,7 @@ const DocumentPiPContent: React.FC = () => {
                 </div>
             </div>
             <div
-                className = { classes.videoWrapper }
+                className = { `${classes.videoWrapper} ${showChat && !isMinimized ? classes.videoWrapperWithChat : ''}` }
                 onClick = { isMinimized ? handleToggleMinimize : undefined }>
                 <video
                     autoPlay = { true }
@@ -261,6 +375,45 @@ const DocumentPiPContent: React.FC = () => {
                     playsInline = { true }
                     ref = { videoRef } />
             </div>
+            {showChat && !isMinimized && (
+                <div className = { classes.chat }>
+                    <div
+                        className = { classes.chatMessages }
+                        ref = { messagesRef }>
+                        {messages.length === 0 && <div className = { classes.chatEmpty }>No messages yet</div>}
+                        {messages.map(m => (
+                            <div
+                                className = { classes.chatMessage }
+                                key = { m.messageId }>
+                                <div className = { classes.chatSender }>
+                                    {m.messageType === MESSAGE_TYPE_LOCAL ? 'You' : m.displayName}
+                                    {m.privateMessage ? ' (private)' : ''}
+                                </div>
+                                <div>{getMessageText(m)}</div>
+                            </div>
+                        ))}
+                    </div>
+                    <form
+                        className = { classes.chatForm }
+                        onSubmit = { handleSend }>
+                        <input
+                            aria-label = 'Message'
+                            className = { classes.chatInput }
+                            onChange = { handleDraftChange }
+                            placeholder = 'Message everyone'
+                            value = { draft } />
+                        <button
+                            aria-label = 'Send'
+                            className = { classes.chatSend }
+                            type = 'submit'>
+                            <Icon
+                                color = '#fff'
+                                size = { 16 }
+                                src = { IconSend } />
+                        </button>
+                    </form>
+                </div>
+            )}
             {!isMinimized && (
                 <div className = { classes.toolbar }>
                     <div
@@ -292,6 +445,19 @@ const DocumentPiPContent: React.FC = () => {
                             size = { 18 }
                             src = { IconScreenshare } />
                     </div>
+                    {!chatDisabled && (
+                        <div
+                            className = { `${classes.toolbarButton} ${showChat ? classes.toolbarButtonActive : ''}` }
+                            onClick = { handleToggleChat }
+                            title = { showChat ? 'Hide chat' : 'Show chat' }>
+                            <Icon
+                                ariaLabel = { showChat ? 'Hide chat' : 'Show chat' }
+                                color = '#fff'
+                                size = { 18 }
+                                src = { IconMessage } />
+                            {!showChat && newestId !== seenId && <span className = { classes.unreadDot } />}
+                        </div>
+                    )}
                     <div
                         className = { `${classes.toolbarButton} ${classes.toolbarButtonHangup} ${
                             hangupArmed ? classes.toolbarButtonHangupArmed : ''}` }

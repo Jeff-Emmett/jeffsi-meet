@@ -1,6 +1,7 @@
 import { IStore } from '../app/types';
 import { MEDIA_TYPE } from '../base/media/constants';
 import { isLocalTrackMuted } from '../base/tracks/functions.any';
+import { isChatDisabled } from '../chat/functions';
 import { handleToggleVideoMuted } from '../toolbox/actions.any';
 import { muteLocal } from '../video-menu/actions.any';
 
@@ -91,7 +92,8 @@ export function enterDocumentPiP() {
             return;
         }
 
-        await openDocumentPiPWindow();
+        // Taller when the popout carries the chat pane under the video.
+        await openDocumentPiPWindow(400, isChatDisabled(getState()) ? 320 : 600);
         dispatch(setDocumentPiPActive(true));
     };
 }

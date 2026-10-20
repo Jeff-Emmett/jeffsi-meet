@@ -7,6 +7,9 @@ import { browser } from '../base/lib-jitsi-meet';
 import { IParticipant } from '../base/participants/types';
 import { getLocalVideoTrack } from '../base/tracks/functions.any';
 import { getVideoTrackByParticipant } from '../base/tracks/functions.web';
+import { MESSAGE_TYPE_LOCAL } from '../chat/constants';
+import { getMessageText } from '../chat/functions';
+import { IMessage } from '../chat/types';
 import { isPrejoinPageVisible } from '../prejoin/functions.any';
 
 import { toggleAudioFromPiP, toggleVideoFromPiP } from './actions';
@@ -289,6 +292,116 @@ export async function renderAvatarOnCanvas(
     }
 
     drawDisplayName(ctx, displayName, centerX, textY, fontFamily, displayNameColor);
+}
+
+/**
+ * How many chat messages the popout shows at once.
+ */
+export const PIP_CHAT_MAX_MESSAGES = 30;
+
+/**
+ * Picks the chat messages worth showing in a popout: real text messages,
+ * newest last, without reactions or lobby chatter.
+ *
+ * @param {Array<IMessage>} messages - The chat messages from redux.
+ * @param {number} max - How many of the newest messages to keep.
+ * @returns {Array<IMessage>}
+ */
+export function getPiPChatMessages(messages: IMessage[], max = PIP_CHAT_MAX_MESSAGES): IMessage[] {
+    return messages
+        .filter(m => !m.isReaction && !m.lobbyChat && Boolean(m.message))
+        .slice(-max);
+}
+
+/**
+ * Splits text into lines that fit {@code maxWidth} with the context's current font.
+ *
+ * @param {CanvasRenderingContext2D} ctx - Canvas 2D context.
+ * @param {string} text - The text to wrap.
+ * @param {number} maxWidth - Maximum line width in pixels.
+ * @returns {Array<string>}
+ */
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+    const lines: string[] = [];
+    let line = '';
+
+    for (const word of text.replace(/\s+/g, ' ').trim().split(' ')) {
+        const candidate = line ? `${line} ${word}` : word;
+
+        if (ctx.measureText(candidate).width <= maxWidth || !line) {
+            line = candidate;
+        } else {
+            lines.push(line);
+            line = word;
+        }
+    }
+    if (line) {
+        lines.push(line);
+    }
+
+    return lines;
+}
+
+/**
+ * Draws the newest chat messages onto a canvas, newest at the bottom. Used as
+ * the video PiP's picture when a message arrives: a video PiP window (the only
+ * kind phones have) shows nothing but one video, so the chat has to become the
+ * video for a moment to be seen at all.
+ *
+ * @param {HTMLCanvasElement} canvas - The canvas element.
+ * @param {CanvasRenderingContext2D} ctx - Canvas 2D context.
+ * @param {Array<IMessage>} messages - Messages to draw, oldest first.
+ * @param {string} fontFamily - Font family for the text.
+ * @returns {void}
+ */
+export function renderChatOnCanvas(
+        canvas: HTMLCanvasElement,
+        ctx: CanvasRenderingContext2D,
+        messages: IMessage[],
+        fontFamily: string
+) {
+    const { width, height } = canvas;
+    const padding = 24;
+    const lineHeight = 34;
+    const textWidth = width - (padding * 2);
+
+    ctx.fillStyle = '#131519';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = '#8ab4f8';
+    ctx.font = `bold 22px ${fontFamily}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Chat', padding, padding);
+
+    // Lay out from the bottom up so the newest message is always visible.
+    let y = height - padding;
+    const top = padding + 40;
+
+    for (const message of [ ...messages ].reverse()) {
+        ctx.font = `26px ${fontFamily}`;
+        const lines = wrapCanvasText(ctx, getMessageText(message), textWidth);
+        const blockHeight = (lines.length + 1) * lineHeight;
+
+        if (y - blockHeight < top) {
+            break;
+        }
+        y -= blockHeight;
+
+        const name = message.messageType === MESSAGE_TYPE_LOCAL ? 'You' : message.displayName;
+
+        ctx.fillStyle = '#9aa0a6';
+        ctx.font = `bold 22px ${fontFamily}`;
+        ctx.fillText(message.privateMessage ? `${name} (private)` : name, padding, y);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `26px ${fontFamily}`;
+        for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], padding, y + ((i + 1) * lineHeight));
+        }
+
+        y -= 8;
+    }
 }
 
 /**

@@ -26,13 +26,21 @@ export function isTouchFirstDevice() {
     if (isMobileBrowser()) {
         return true;
     }
-    if (typeof navigator === 'undefined' || typeof window === 'undefined' || !window.matchMedia) {
+
+    // Browser-only APIs, typed locally: this file is shared with native, whose
+    // window/navigator typings don't carry them (isMobileBrowser() covers native).
+    const nav = typeof navigator === 'undefined' ? undefined : navigator as { maxTouchPoints?: number; };
+    const win = typeof window === 'undefined'
+        ? undefined
+        : window as { matchMedia?: (query: string) => { matches: boolean; }; };
+
+    if (!nav || !win?.matchMedia) {
         return false;
     }
 
-    return (navigator.maxTouchPoints ?? 0) > 0
-        && window.matchMedia('(pointer: coarse)').matches
-        && !window.matchMedia('(any-pointer: fine)').matches;
+    return (nav.maxTouchPoints ?? 0) > 0
+        && win.matchMedia('(pointer: coarse)').matches
+        && !win.matchMedia('(any-pointer: fine)').matches;
 }
 
 /**

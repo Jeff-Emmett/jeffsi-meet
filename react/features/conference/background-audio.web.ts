@@ -19,7 +19,14 @@
  *      enough for the OS to throttle or evict it, and none of that video
  *      is visible anyway while the screen is off or another app is in
  *      front. Dropping to audio-only on hide (and restoring on show)
- *      keeps the call cheap enough to survive being backgrounded.
+ *      keeps the call cheap enough to survive being backgrounded. Not
+ *      while the call is popped out, where the video IS still on screen.
+ *   5. Remote audio revival — when the OS takes audio focus (screen off on
+ *      some OEMs, a notification, another app's player) the browser pauses
+ *      every media element on the page, including the participants'
+ *      <audio> elements. Those are autoplay elements; nothing un-pauses
+ *      them, so the call went silent for good. Play them again on `pause`
+ *      and on every return.
  *
  * No-ops on desktop (mobile-only). Caller wires this in conference
  * middleware on CONFERENCE_JOINED and tears it down on CONFERENCE_LEFT.
@@ -37,6 +44,7 @@ let _visibilityHandler: (() => void) | null = null;
 let _gestureUnlockHandler: (() => void) | null = null;
 let _audioPauseHandler: (() => void) | null = null;
 let _revivalHandler: (() => void) | null = null;
+let _remoteAudioPauseHandler: ((e: Event) => void) | null = null;
 let _store: IStore | null = null;
 
 /**
@@ -159,6 +167,9 @@ function _enterAudioOnlyForHidden(): void {
     if (state['features/base/audio-only'].enabled) return;
     if (isScreenVideoShared(state)) return;
 
+    // Popped out: the video is still on screen, in the floating window.
+    if (state['features/pip']?.isPiPActive || state['features/pip']?.isDocumentPiPActive) return;
+
     _forcedAudioOnly = true;
     logger.info('[background-audio] page hidden — dropping to audio-only to keep the call alive');
     _store.dispatch(setAudioOnly(true));
@@ -176,6 +187,30 @@ function _exitAudioOnlyForVisible(): void {
     _forcedAudioOnly = false;
     logger.info('[background-audio] page visible — restoring video');
     _store?.dispatch(setAudioOnly(false));
+}
+
+/**
+ * Whether an element is one of the participants' audio elements, rendered by
+ * AudioTracksContainer with a `remoteAudio_` id and a live stream attached.
+ *
+ * @param {EventTarget | null} el - The element to check.
+ * @returns {boolean}
+ */
+function _isRemoteAudio(el: EventTarget | null): el is HTMLAudioElement {
+    return el instanceof HTMLAudioElement && el.id.startsWith('remoteAudio_') && Boolean(el.srcObject);
+}
+
+/**
+ * Plays every participant audio element that has been paused.
+ *
+ * @returns {void}
+ */
+function _resumeRemoteAudio(): void {
+    document.querySelectorAll('audio[id^="remoteAudio_"]').forEach(el => {
+        if (_isRemoteAudio(el) && el.paused) {
+            void el.play().catch(() => undefined);
+        }
+    });
 }
 
 export function startBackgroundAudioKeepAlive(roomName: string, store?: IStore): void {
@@ -226,6 +261,22 @@ export function startBackgroundAudioKeepAlive(roomName: string, store?: IStore):
 
     _setMediaSessionHandlers();
 
+    // `pause` doesn't bubble, so listen in the capture phase. Detaching a
+    // track (participant left, track replaced) clears srcObject first, which
+    // _isRemoteAudio checks after a tick so those pauses are left alone.
+    _remoteAudioPauseHandler = (e: Event) => {
+        const el = e.target;
+
+        if (!_running || !_isRemoteAudio(el)) return;
+        setTimeout(() => {
+            if (_running && _isRemoteAudio(el) && el.paused && el.isConnected) {
+                logger.info(`[background-audio] ${el.id} was paused — resuming call audio`);
+                void el.play().catch(() => undefined);
+            }
+        }, 0);
+    };
+    document.addEventListener('pause', _remoteAudioPauseHandler, true);
+
     /**
      * Everything that has to be true again once the page is back in front:
      * the media session still describes this call, the keep-alive loop is
@@ -238,6 +289,7 @@ export function startBackgroundAudioKeepAlive(roomName: string, store?: IStore):
         _setMediaSessionMeta(roomName);
         _setMediaSessionHandlers();
         void _silentAudio?.play().catch(() => undefined);
+        _resumeRemoteAudio();
         _exitAudioOnlyForVisible();
     };
 
@@ -285,6 +337,10 @@ export function stopBackgroundAudioKeepAlive(): void {
     if (_visibilityHandler) {
         document.removeEventListener('visibilitychange', _visibilityHandler);
         _visibilityHandler = null;
+    }
+    if (_remoteAudioPauseHandler) {
+        document.removeEventListener('pause', _remoteAudioPauseHandler, true);
+        _remoteAudioPauseHandler = null;
     }
     if (_revivalHandler) {
         document.removeEventListener('resume', _revivalHandler);
