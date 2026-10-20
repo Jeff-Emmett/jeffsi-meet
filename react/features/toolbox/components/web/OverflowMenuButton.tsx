@@ -91,6 +91,10 @@ const useStyles = makeStyles<{ overflowDrawer: boolean; }>()(
             maxHeight: overflowDrawer ? undefined : 'calc(100dvh - 100px)',
             paddingBottom: overflowDrawer ? undefined : 0,
             minWidth: '240px',
+
+            // Lets the reactions row wrap instead of widening the menu past
+            // the right edge of a tablet or a phone in landscape.
+            maxWidth: overflowDrawer ? undefined : 'min(360px, calc(100vw - 16px))',
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column' as const
