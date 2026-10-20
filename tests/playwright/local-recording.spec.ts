@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-const ROOM = `test-local-recording-${Date.now()}`;
+const RUN = Date.now();
 
 /**
  * Replaces the folder picker with the origin-private file system, which
@@ -18,9 +18,10 @@ const stubFolderPicker = (page: Page) => page.addInitScript(() => {
     window.showDirectoryPicker = () => navigator.storage.getDirectory();
 });
 
-const joinRoom = async (page: Page, name: string) => {
+// One room per test: participants of a closed context linger in the room for a while.
+const joinRoom = async (page: Page, name: string, room: string) => {
     // Not prejoinConfig.enabled=false: that URL override also starts without media.
-    await page.goto(`/${ROOM}#userInfo.displayName="${name}"`);
+    await page.goto(`/${room}#userInfo.displayName="${name}"`);
     await page.getByText('Configuring devices').waitFor({ state: 'hidden', timeout: 20000 })
         .catch(() => { /* never shown */ });
     await page.locator('[data-testid="prejoin.joinMeeting"]').click({ force: true, timeout: 20000 });
@@ -70,8 +71,8 @@ test.describe('Local recording', () => {
                 return canvas.captureStream(10);
             };
         });
-        await joinRoom(recorder.page, recorder.name);
-        await joinRoom(other.page, other.name);
+        await joinRoom(recorder.page, recorder.name, `test-local-recording-${RUN}-a`);
+        await joinRoom(other.page, other.name, `test-local-recording-${RUN}-a`);
         await recorder.page.waitForFunction(() =>
             // @ts-ignore
             APP.store.getState()['features/base/tracks'].filter((t: any) => !t.local).length >= 2,
@@ -222,8 +223,8 @@ test.describe('Local recording', () => {
         const other = await newParticipant(browser, 'Otto Other');
 
         await stubFolderPicker(recorder.page);
-        await joinRoom(recorder.page, recorder.name);
-        await joinRoom(other.page, other.name);
+        await joinRoom(recorder.page, recorder.name, `test-local-recording-${RUN}-b`);
+        await joinRoom(other.page, other.name, `test-local-recording-${RUN}-b`);
 
         // Otto's global setting: never record or transcribe me.
         await other.page.evaluate(() => {
@@ -239,7 +240,8 @@ test.describe('Local recording', () => {
         await recorder.page.waitForTimeout(6000);
         await recorder.page.evaluate(otherName => {
             // @ts-ignore
-            const remote = [ ...APP.store.getState()['features/base/participants'].remote.values() ][0];
+            const remote = [ ...APP.store.getState()['features/base/participants'].remote.values() ]
+                .find((r: any) => r.name === otherName);
 
             // @ts-ignore
             APP.store.dispatch({
