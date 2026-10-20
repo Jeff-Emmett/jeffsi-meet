@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ReactDOM from 'react-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { makeStyles } from 'tss-react/mui';
 
@@ -31,7 +30,7 @@ import { startScreenShareFlow } from '../../screen-share/actions.web';
 import { isScreenVideoShared } from '../../screen-share/functions';
 import { isDesktopShareButtonDisabled } from '../../toolbox/functions.web';
 import { exitDocumentPiP, toggleAudioFromPiP, toggleDocumentPiPMinimized, toggleVideoFromPiP } from '../actions';
-import { getDocumentPiPWindow, getPiPChatMessages } from '../functions';
+import { getPiPChatMessages } from '../functions';
 import { useCanvasAvatar, usePiPParticipantAndTrack, usePiPTrackAttachment } from '../hooks';
 
 const useStyles = makeStyles()(() => {
@@ -39,8 +38,8 @@ const useStyles = makeStyles()(() => {
         root: {
             display: 'flex',
             flexDirection: 'column' as const,
-            width: '100%',
-            height: '100%',
+            width: '100vw',
+            height: '100vh',
             background: '#000',
             overflow: 'hidden'
         },
@@ -67,9 +66,18 @@ const useStyles = makeStyles()(() => {
             minHeight: 0
         },
         videoWrapperWithChat: {
-            flex: '0 0 40%'
+            flex: '0 0 40%',
+
+            // Too short for both: the video gets the space back.
+            '@media (max-height: 300px)': {
+                flex: 1
+            }
         },
         chat: {
+            '@media (max-height: 300px)': {
+                display: 'none'
+            },
+
             flex: 1,
             display: 'flex',
             flexDirection: 'column' as const,
@@ -141,8 +149,9 @@ const useStyles = makeStyles()(() => {
         },
         toolbar: {
             display: 'flex',
+            flexWrap: 'wrap' as const,
             justifyContent: 'center',
-            gap: '12px',
+            gap: '8px 12px',
             padding: '8px',
             background: 'rgba(0, 0, 0, 0.6)',
             flexShrink: 0
@@ -195,18 +204,16 @@ const useStyles = makeStyles()(() => {
 const HANGUP_ARM_MS = 3000;
 
 /**
- * Content portaled into the Document Picture-in-Picture window: a mini
- * video, the meeting chat (read and reply without returning to the tab), a
- * bottom toolbar (mic/camera/chat/hangup), and a top-right header (return to
- * tab / minimize).
+ * The popout's body: a mini video, the meeting chat (read and reply without
+ * returning to the tab), a bottom toolbar (mic/camera/share/chat/hangup), and
+ * a top-right header (return to tab / minimize).
  *
- * @returns {React.ReactPortal | null}
+ * @returns {JSX.Element}
  */
 const DocumentPiPContent: React.FC = () => {
     const { classes, theme } = useStyles();
     const dispatch: IStore['dispatch'] = useDispatch();
     const videoRef = useRef<HTMLVideoElement>(null);
-    const [ container, setContainer ] = useState<HTMLElement | null>(null);
 
     const isMinimized = useSelector((state: IReduxState) => state['features/pip']?.isDocumentPiPMinimized);
     const audioMuted = useSelector((state: IReduxState) =>
@@ -236,27 +243,6 @@ const DocumentPiPContent: React.FC = () => {
     });
 
     usePiPTrackAttachment(videoRef, videoTrack, shouldShowAvatar, canvasStreamRef);
-
-    /**
-     * Grabs the open Document PiP window's body as the portal target, and
-     * makes sure closing the popout (native 'X', OS close, etc.) syncs
-     * Redux state back.
-     */
-    useEffect(() => {
-        const pipWindow = getDocumentPiPWindow();
-
-        if (!pipWindow) {
-            return;
-        }
-
-        setContainer(pipWindow.document.body);
-
-        const onPageHide = () => dispatch(exitDocumentPiP());
-
-        pipWindow.addEventListener('pagehide', onPageHide);
-
-        return () => pipWindow.removeEventListener('pagehide', onPageHide);
-    }, [ dispatch ]);
 
     const handleReturnToTab = useCallback(() => {
         window.focus();
@@ -341,11 +327,7 @@ const DocumentPiPContent: React.FC = () => {
         }
     }, [ dispatch, draft ]);
 
-    if (!container) {
-        return null;
-    }
-
-    return ReactDOM.createPortal(
+    return (
         <div className = { classes.root }>
             <div className = { classes.header }>
                 <div
@@ -472,8 +454,7 @@ const DocumentPiPContent: React.FC = () => {
                     </div>
                 </div>
             )}
-        </div>,
-        container
+        </div>
     );
 };
 

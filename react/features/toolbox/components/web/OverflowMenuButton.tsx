@@ -12,12 +12,6 @@ import { setGifMenuVisibility } from '../../../gifs/actions';
 import { isGifsMenuOpen } from '../../../gifs/functions.web';
 import ReactionEmoji from '../../../reactions/components/web/ReactionEmoji';
 import ReactionsMenu from '../../../reactions/components/web/ReactionsMenu';
-import {
-    GIFS_MENU_HEIGHT_IN_OVERFLOW_MENU,
-    RAISE_HAND_ROW_HEIGHT,
-    REACTIONS_MENU_HEIGHT_DRAWER,
-    REACTIONS_MENU_HEIGHT_IN_OVERFLOW_MENU
-} from '../../../reactions/constants';
 import { getReactionsQueue } from '../../../reactions/functions.any';
 import { IReactionsMenuParent } from '../../../reactions/types';
 import { DRAWER_MAX_HEIGHT } from '../../constants';
@@ -68,12 +62,26 @@ interface IProps {
     showReactionsMenu: boolean;
 }
 
-const useStyles = makeStyles<{ overflowDrawer: boolean; reactionsMenuHeight: number; }>()(
-(_theme, { reactionsMenuHeight, overflowDrawer }) => {
+// The menu is a flex column: the button list scrolls in whatever height is
+// left and the reactions tray keeps its natural height below it. Sizing the
+// list by subtracting a hardcoded tray height broke whenever the tray wrapped
+// to more rows than assumed (narrow phones, landscape), and the tray then
+// covered the last menu items.
+const useStyles = makeStyles<{ overflowDrawer: boolean; }>()(
+(_theme, { overflowDrawer }) => {
     return {
         overflowMenuDrawer: {
-            overflowY: 'scroll',
-            height: `calc(${DRAWER_MAX_HEIGHT})`
+            display: 'flex',
+            flexDirection: 'column' as const,
+            maxHeight: `calc(${DRAWER_MAX_HEIGHT})`,
+
+            // ContextMenu's drawer wrapper, which has no class hook of its own.
+            '& > div': {
+                display: 'flex',
+                flexDirection: 'column' as const,
+                flex: '1 1 auto',
+                minHeight: 0
+            }
         },
         contextMenu: {
             position: 'relative' as const,
@@ -83,22 +91,18 @@ const useStyles = makeStyles<{ overflowDrawer: boolean; reactionsMenuHeight: num
             maxHeight: overflowDrawer ? undefined : 'calc(100dvh - 100px)',
             paddingBottom: overflowDrawer ? undefined : 0,
             minWidth: '240px',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column' as const
         },
         content: {
             position: 'relative',
-            maxHeight: overflowDrawer
-                ? `calc(100% - ${reactionsMenuHeight}px - 16px)` : `calc(100dvh - 100px - ${reactionsMenuHeight}px)`,
+            flex: '1 1 auto',
+            minHeight: 0,
             overflowY: 'auto'
         },
         footer: {
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0
-        },
-        reactionsPadding: {
-            height: `${reactionsMenuHeight}px`
+            flexShrink: 0
         }
     };
 });
@@ -143,24 +147,7 @@ const OverflowMenuButton = ({
 
     const toolbarAccLabel = 'toolbar.accessibilityLabel.moreActionsMenu';
     const { t } = useTranslation();
-    let reactionsMenuHeight = 0;
-
-    if (showReactionsMenu) {
-        reactionsMenuHeight = REACTIONS_MENU_HEIGHT_DRAWER;
-        if (!overflowDrawer) {
-            reactionsMenuHeight = REACTIONS_MENU_HEIGHT_IN_OVERFLOW_MENU;
-        }
-        if (!showRaiseHandInReactionsMenu) {
-            reactionsMenuHeight -= RAISE_HAND_ROW_HEIGHT;
-        }
-        if (!overflowDrawer && isGiphyVisible) {
-            reactionsMenuHeight += GIFS_MENU_HEIGHT_IN_OVERFLOW_MENU;
-        }
-    }
-    const { classes } = useStyles({
-        reactionsMenuHeight,
-        overflowDrawer
-    });
+    const { classes } = useStyles({ overflowDrawer });
 
     const groupsJSX = buttons.map((buttonGroup: any) => (
         <ContextMenuItemGroup key = { `group-${buttonGroup[0].group}` }>
@@ -216,7 +203,6 @@ const OverflowMenuButton = ({
                             <>
                                 <div className = { classes.overflowMenuDrawer }>
                                     { overflowMenu }
-                                    <div className = { classes.reactionsPadding } />
                                 </div>
                             </>
                         </Drawer>

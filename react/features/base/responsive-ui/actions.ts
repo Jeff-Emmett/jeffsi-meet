@@ -3,6 +3,7 @@ import { batch } from 'react-redux';
 import { IStore } from '../../app/types';
 import { CHAT_SIZE, SMALL_WIDTH_THRESHOLD } from '../../chat/constants';
 import { getParticipantsPaneWidth } from '../../participants-pane/functions';
+import { isTouchFirstDevice } from '../environment/utils';
 
 import {
     CLIENT_RESIZED,
@@ -25,6 +26,17 @@ import { ASPECT_RATIO_NARROW, ASPECT_RATIO_WIDE } from './constants';
  */
 const REDUCED_UI_THRESHOLD = 300;
 const WEB_REDUCED_UI_THRESHOLD = 320;
+
+/**
+ * Reduced UI threshold for web on phones and tablets. Reduced UI is meant for a
+ * call squeezed into a tiny embed: it drops everything but mic/camera and
+ * renders no chat. On a phone the window IS the screen, and 320px catches
+ * narrow phones (Galaxy Fold cover screen, 280px) and most phones in landscape
+ * once the browser bar is taken off the height - leaving users with no chat,
+ * no More menu and no way to reach either. Only a genuine sliver (split screen)
+ * should lose the toolbar there.
+ */
+const TOUCH_WEB_REDUCED_UI_THRESHOLD = 200;
 
 /**
  * Indicates a resize of the window.
@@ -118,9 +130,13 @@ export function setAspectRatio(width: number, height: number) {
  */
 export function setReducedUI(width: number, height: number) {
     return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
-        const threshold = navigator.product === 'ReactNative'
-            ? REDUCED_UI_THRESHOLD
-            : WEB_REDUCED_UI_THRESHOLD;
+        let threshold = WEB_REDUCED_UI_THRESHOLD;
+
+        if (navigator.product === 'ReactNative') {
+            threshold = REDUCED_UI_THRESHOLD;
+        } else if (isTouchFirstDevice()) {
+            threshold = TOUCH_WEB_REDUCED_UI_THRESHOLD;
+        }
         const reducedUI = Math.min(width, height) < threshold;
 
         if (reducedUI !== getState()['features/base/responsive-ui'].reducedUI) {

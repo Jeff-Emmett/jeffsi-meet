@@ -4,12 +4,12 @@ import { useSelector } from 'react-redux';
 import { IReduxState } from '../../app/types';
 import { shouldShowPiP } from '../functions';
 
-import DocumentPiPContent from './DocumentPiPContent';
+import DocumentPiPPortal from './DocumentPiPPortal';
 import PiPVideoElement from './PiPVideoElement';
 
 /**
  * Wrapper component that conditionally renders PiPVideoElement and,
- * when a Document PiP window is open, the portaled DocumentPiPContent.
+ * when a Document PiP window is open, the portaled DocumentPiPPortal.
  * Prevents mounting when PiP is disabled or on prejoin without showOnPrejoin flag.
  *
  * @returns {React.ReactElement | null}
@@ -25,7 +25,7 @@ function PiP() {
     return (
         <>
             <PiPVideoElement />
-            {isDocumentPiPActive && <DocumentPiPContent />}
+            {isDocumentPiPActive && <DocumentPiPPortal />}
         </>
     );
 }

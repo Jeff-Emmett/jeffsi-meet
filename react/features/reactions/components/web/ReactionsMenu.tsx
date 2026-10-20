@@ -118,7 +118,10 @@ const useStyles = makeStyles<IProps>()((theme, props: IProps) => {
             borderRadius: 0,
             position: 'relative',
             boxSizing: 'border-box',
-            height: `${reactionsMenuHeight}px`
+
+            // A floor, not a fixed size: our reaction set wraps to a third row
+            // on phones, and a fixed height clipped it off the bottom.
+            minHeight: `${reactionsMenuHeight}px`
         }
     };
 });
