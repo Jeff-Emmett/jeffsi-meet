@@ -179,11 +179,11 @@ def main():
         for x in segments:
             f.write(f"{vtt_time(x['start'])} --> {vtt_time(x['end'])}\n<v {x['speaker']}>{x['text']}\n\n")
     with open(os.path.join(args.folder, 'transcript.accurate.md'), 'w') as f:
-        f.write(f"# {manifest.get('room', 'Meeting')}\n\nRecorded {manifest.get('startedAt', '')}\n\n")
+        f.write(f"# {manifest.get('room', 'Meeting')}\n\nRecorded {manifest.get('startedAt', '')}\n")
         prev = None
         for x in segments:
             if x['speaker'] != prev:
-                f.write(f"\n**{x['speaker']}** [{vtt_time(x['start'])[:8]}]: ")
+                f.write(f"\n\n**{x['speaker']}** [{vtt_time(x['start'])[:8]}]: ")
                 prev = x['speaker']
             else:
                 f.write(' ')
