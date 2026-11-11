@@ -9,6 +9,7 @@ import { TRACK_ADDED, TRACK_REMOVED, TRACK_STOPPED } from '../base/tracks/action
 import { PARTICIPANTS_PANE_CLOSE, PARTICIPANTS_PANE_OPEN } from '../participants-pane/actionTypes';
 
 import './middleware.any';
+import { resetTileFocus } from './tileFocus';
 
 /**
  * Middleware which intercepts actions and updates the legacy component
@@ -32,6 +33,7 @@ MiddlewareRegistry.register(store => next => action => {
         break;
     case CONFERENCE_WILL_LEAVE:
         VideoLayout.reset();
+        resetTileFocus();
         break;
 
     case PARTICIPANT_JOINED:

@@ -45,6 +45,7 @@ import { SharedMusicTile } from '../../../shared-music/components';
 import { SharedVideoTile } from '../../../shared-video/components';
 import { LAYOUTS } from '../../../video-layout/constants';
 import { getCurrentLayout } from '../../../video-layout/functions.web';
+import { enterTileFocus } from '../../../video-layout/tileFocus';
 import { togglePinStageParticipant } from '../../actions';
 import {
     DISPLAY_MODE_TO_CLASS_NAME,
@@ -429,6 +430,7 @@ class Thumbnail extends Component<IProps, IState> {
         this._clearDoubleClickTimeout = this._clearDoubleClickTimeout.bind(this);
         this._onCanPlay = this._onCanPlay.bind(this);
         this._onClick = this._onClick.bind(this);
+        this._focusTile = this._focusTile.bind(this);
         this._onPinClick = this._onPinClick.bind(this);
         this._onTogglePinButtonKeyDown = this._onTogglePinButtonKeyDown.bind(this);
         this._onFocus = this._onFocus.bind(this);
@@ -735,19 +737,42 @@ class Thumbnail extends Component<IProps, IState> {
     /**
      * On click handler.
      *
-     * Rspace policy (TASK-RMEETS-UI-POLISH): clicking the thumbnail body
-     * is a no-op. Pinning is triggered from the three-dot menu ("Pin to
-     * stage") in the corner of every tile. Body click was causing accidental
-     * fullscreen-on-tap; the explicit menu item makes the gesture deliberate.
+     * In the gallery (tile view) a mouse click focuses that participant: the
+     * stage fills with them and the filmstrip hides; clicking the stage or
+     * pressing Escape returns to the gallery (see video-layout/tileFocus.ts).
      *
-     * Keyboard pin path (`_onTogglePinButtonKeyDown` → `_onPinClick`)
-     * preserves a11y; this handler stays bound for focus/blur/hover but
-     * does not dispatch.
+     * Touch stays deliberate (TASK-RMEETS-UI-POLISH: single taps caused
+     * accidental fullscreen): on mobile onClick isn't bound at all and a
+     * double-tap focuses instead, via {@code _onTouchStart}. Outside tile
+     * view a body click stays a no-op; pinning is in the tile's menu.
+     *
+     * @param {React.MouseEvent} [e] - The click event.
+     * @returns {void}
+     */
+    _onClick(e?: React.MouseEvent) {
+        // Clicks bubble here from the tile's own controls and from portaled
+        // menus (React bubbles through portals) — only the tile body counts.
+        const target = e?.target as Element | undefined;
+
+        if (e && (!e.currentTarget.contains(target as Node)
+                || target?.closest?.('button, a, input, [role="button"], [role="menu"], [role="menuitem"], [role="slider"]'))) {
+            return;
+        }
+
+        this._focusTile();
+    }
+
+    /**
+     * Focuses this participant when in the gallery.
      *
      * @returns {void}
      */
-    _onClick() {
-        // intentionally empty
+    _focusTile() {
+        const { _participant, _thumbnailType, dispatch } = this.props;
+
+        if (_thumbnailType === THUMBNAIL_TYPE.TILE && _participant?.id) {
+            dispatch(enterTileFocus(_participant.id));
+        }
     }
 
     /**
@@ -859,7 +884,7 @@ class Thumbnail extends Component<IProps, IState> {
 
         if (this._firstTap) {
             this._clearDoubleClickTimeout();
-            this._onClick();
+            this._focusTile();
 
             return;
         }

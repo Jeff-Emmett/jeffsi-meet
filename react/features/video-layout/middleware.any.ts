@@ -14,6 +14,7 @@ import { setTileView } from './actions';
 import { getAutoPinSetting, updateAutoPinnedParticipant } from './functions';
 import logger from './logger';
 import './subscriber';
+import { exitTileFocus, getTileFocusParticipantId, onPinChanged } from './tileFocus';
 
 let previousTileViewEnabled: boolean | undefined;
 
@@ -31,6 +32,10 @@ MiddlewareRegistry.register(store => next => action => {
 
     switch (action.type) {
     case PARTICIPANT_LEFT: {
+        if (action.participant?.id && action.participant.id === getTileFocusParticipantId()) {
+            store.dispatch(exitTileFocus());
+        }
+
         if (!getAutoPinSetting() || isFollowMeActive(store)) {
             logger.debug('Auto pinning is disabled or Follow Me is active, skipping auto pinning.');
 
@@ -54,6 +59,8 @@ MiddlewareRegistry.register(store => next => action => {
     // then re-set it when needed.
     case PIN_PARTICIPANT: {
         const pinnedParticipant = action.participant?.id;
+
+        onPinChanged(store, pinnedParticipant);
 
         if (pinnedParticipant) {
             _storeTileViewStateAndClear(store);

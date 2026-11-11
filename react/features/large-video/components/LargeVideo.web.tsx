@@ -5,6 +5,7 @@ import { connect } from 'react-redux';
 import VideoLayout from '../../../../modules/UI/videolayout/VideoLayout';
 import { IReduxState, IStore } from '../../app/types';
 import { isDisplayNameVisible } from '../../base/config/functions.web';
+import { isAnyDialogOpen } from '../../base/dialog/functions';
 import { VIDEO_TYPE } from '../../base/media/constants';
 import { getLocalParticipant } from '../../base/participants/functions';
 import Watermarks from '../../base/react/components/web/Watermarks';
@@ -19,6 +20,7 @@ import SharedVideo from '../../shared-video/components/web/SharedVideo';
 import Captions from '../../subtitles/components/web/Captions';
 import { areClosedCaptionsEnabled } from '../../subtitles/functions.any';
 import { setTileView } from '../../video-layout/actions.web';
+import { exitTileFocus, isTileFocusActive } from '../../video-layout/tileFocus';
 import Whiteboard from '../../whiteboard/components/web/Whiteboard';
 import { isWhiteboardEnabled } from '../../whiteboard/functions';
 import { setSeeWhatIsBeingShared } from '../actions.web';
@@ -43,6 +45,11 @@ interface IProps {
      * The user selected background image url.
      */
     _customBackgroundImageUrl: string;
+
+    /**
+     * Whether a dialog is open (Escape belongs to it then).
+     */
+    _dialogOpen: boolean;
 
     /**
      * Whether the screen-sharing placeholder should be displayed or not.
@@ -144,6 +151,8 @@ class LargeVideo extends Component<IProps> {
 
     _wrapperRef: React.RefObject<HTMLDivElement>;
 
+    _lastTouchAt = 0;
+
     /**
      * Constructor of the component.
      *
@@ -157,7 +166,27 @@ class LargeVideo extends Component<IProps> {
 
         this._clearTapTimeout = this._clearTapTimeout.bind(this);
         this._onDoubleTap = this._onDoubleTap.bind(this);
+        this._onStageClick = this._onStageClick.bind(this);
+        this._onKeyDown = this._onKeyDown.bind(this);
         this._updateLayout = this._updateLayout.bind(this);
+    }
+
+    /**
+     * Implements {@code Component#componentDidMount}.
+     *
+     * @inheritdoc
+     */
+    override componentDidMount() {
+        document.addEventListener('keydown', this._onKeyDown);
+    }
+
+    /**
+     * Implements {@code Component#componentWillUnmount}.
+     *
+     * @inheritdoc
+     */
+    override componentWillUnmount() {
+        document.removeEventListener('keydown', this._onKeyDown);
     }
 
     /**
@@ -225,13 +254,16 @@ class LargeVideo extends Component<IProps> {
 
                 <div
                     id = 'dominantSpeaker'
+                    onClick = { this._onStageClick }
                     onTouchEnd = { this._onDoubleTap }>
                     <div className = 'dynamic-shadow' />
                     <div id = 'dominantSpeakerAvatarContainer' />
                 </div>
                 <div id = 'remotePresenceMessage' />
                 <span id = 'remoteConnectionMessage' />
-                <div id = 'largeVideoElementsContainer'>
+                <div
+                    id = 'largeVideoElementsContainer'
+                    onClick = { this._onStageClick }>
                     <div id = 'largeVideoBackgroundContainer' />
                     {/*
                       * FIXME: the architecture of elements related to the large
@@ -345,6 +377,7 @@ class LargeVideo extends Component<IProps> {
      * @returns {void}
      */
     _onDoubleTap(e: React.TouchEvent) {
+        this._lastTouchAt = Date.now();
         e.stopPropagation();
         e.preventDefault();
 
@@ -354,6 +387,39 @@ class LargeVideo extends Component<IProps> {
         } else {
             this._tappedTimeout = window.setTimeout(this._clearTapTimeout, 300);
         }
+    }
+
+    /**
+     * Mouse click on the stage while a gallery focus is active returns to the
+     * gallery. Touch keeps its double-tap (the synthetic click after a tap is
+     * ignored, so a single tap to reveal the toolbar doesn't exit).
+     *
+     * @private
+     * @returns {void}
+     */
+    _onStageClick() {
+        if (Date.now() - this._lastTouchAt < 700 || !isTileFocusActive()) {
+            return;
+        }
+        this.props.dispatch(exitTileFocus());
+    }
+
+    /**
+     * Escape returns to the gallery from a gallery focus, unless a dialog or
+     * a text field has it.
+     *
+     * @param {KeyboardEvent} e - The keydown event.
+     * @private
+     * @returns {void}
+     */
+    _onKeyDown(e: KeyboardEvent) {
+        const target = e.target as HTMLElement | null;
+
+        if (e.key !== 'Escape' || e.defaultPrevented || !isTileFocusActive() || this.props._dialogOpen
+                || target?.closest?.('input, textarea, select, [contenteditable="true"]')) {
+            return;
+        }
+        this.props.dispatch(exitTileFocus());
     }
 }
 
@@ -382,6 +448,7 @@ function _mapStateToProps(state: IReduxState) {
         _backgroundAlpha: state['features/base/config'].backgroundAlpha,
         _customBackgroundColor: backgroundColor,
         _customBackgroundImageUrl: backgroundImageUrl,
+        _dialogOpen: isAnyDialogOpen(state),
         _displayScreenSharingPlaceholder:
             Boolean(isLocalScreenshareOnLargeVideo && !seeWhatIsBeingShared && !isSpotTV(state)),
         _hideSelfView: getHideSelfView(state),
