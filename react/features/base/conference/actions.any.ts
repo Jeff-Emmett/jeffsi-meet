@@ -1,5 +1,6 @@
 import { IReduxState, IStore } from '../../app/types';
 import { readyToClose } from '../../mobile/external-api/actions';
+import { getRoomPasswordFromURL } from '../../room-lock/functions';
 import { transcriberJoined, transcriberLeft } from '../../transcribing/actions';
 import { setIAmVisitor } from '../../visitors/actions';
 import { iAmVisitor } from '../../visitors/functions';
@@ -633,7 +634,7 @@ export function createConference(overrideRoom?: string | String) {
 
         const replaceParticipant = getReplaceParticipant(state);
 
-        conference.join(password, replaceParticipant);
+        conference.join(password || getRoomPasswordFromURL(state), replaceParticipant);
     };
 }
 

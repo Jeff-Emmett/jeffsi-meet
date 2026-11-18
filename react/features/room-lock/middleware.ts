@@ -7,8 +7,12 @@ import {
     LOCK_STATE_CHANGED,
     SET_PASSWORD_FAILED
 } from '../base/conference/actionTypes';
+import { setPassword } from '../base/conference/actions';
+import { IJitsiConference } from '../base/conference/reducer';
 import { hideDialog } from '../base/dialog/actions';
 import { JitsiConferenceErrors } from '../base/lib-jitsi-meet';
+import { PARTICIPANT_UPDATED } from '../base/participants/actionTypes';
+import { getParticipantCount, isLocalParticipantModerator } from '../base/participants/functions';
 import MiddlewareRegistry from '../base/redux/MiddlewareRegistry';
 import { showErrorNotification, showNotification } from '../notifications/actions';
 import { NOTIFICATION_TIMEOUT_TYPE } from '../notifications/constants';
@@ -16,7 +20,14 @@ import { NOTIFICATION_TIMEOUT_TYPE } from '../notifications/constants';
 import { _openPasswordRequiredPrompt } from './actions';
 import PasswordRequiredPrompt from './components/PasswordRequiredPrompt';
 import { LOCKED_REMOTELY } from './constants';
+import { generateRoomPassword } from './functions';
 import logger from './logger';
+
+/**
+ * Conferences this client has already tried to auto-lock, so a password the
+ * owner later removes stays removed.
+ */
+const autoLockAttempted = new WeakSet<IJitsiConference>();
 
 /**
  * Middleware that captures conference failed and checks for password required
@@ -31,7 +42,10 @@ MiddlewareRegistry.register(store => next => action => {
         return _conferenceFailed(store, next, action);
 
     case CONFERENCE_JOINED:
-        return _conferenceJoined(store, next, action);
+        return _maybeAutoLock(store, _conferenceJoined(store, next, action));
+
+    case PARTICIPANT_UPDATED:
+        return action.participant?.local ? _maybeAutoLock(store, next(action)) : next(action);
 
     case LOCK_STATE_CHANGED: {
         const previousLockedState = store.getState()['features/base/conference'].locked;
@@ -60,6 +74,47 @@ MiddlewareRegistry.register(store => next => action => {
 
     return next(action);
 });
+
+/**
+ * With {@code autoRoomPassword} on, the participant who opens a room (alone in
+ * it, and its owner: prosody makes the first joiner owner) locks it with a
+ * random password. The invite link then carries it, so link holders join
+ * directly and everyone else knocks for the owner to admit.
+ *
+ * @param {Store} store - The redux store.
+ * @param {*} result - The result of the action which triggered the check.
+ * @private
+ * @returns {*} The given result.
+ */
+function _maybeAutoLock({ dispatch, getState }: IStore, result: any) {
+    const state = getState();
+    const { conference, locked, password } = state['features/base/conference'];
+
+    if (!state['features/base/config'].autoRoomPassword
+            || !conference
+            || autoLockAttempted.has(conference)
+            || locked
+            || password
+            || !isLocalParticipantModerator(state)
+            || getParticipantCount(state) !== 1) {
+        return result;
+    }
+
+    autoLockAttempted.add(conference);
+
+    dispatch(setPassword(conference, conference.lock, generateRoomPassword()))
+        ?.then(() => {
+            if (getState()['features/base/conference'].password) {
+                dispatch(showNotification({
+                    descriptionKey: 'notify.autoRoomPasswordDescription',
+                    titleKey: 'notify.autoRoomPasswordTitle'
+                }, NOTIFICATION_TIMEOUT_TYPE.MEDIUM));
+            }
+        })
+        .catch(() => logger.warn('auto room password: lock failed'));
+
+    return result;
+}
 
 /**
  * Handles cleanup of lock prompt state when a conference is joined.

@@ -833,6 +833,8 @@
         "allowedUnmute": "You can unmute your microphone, start your camera or share your screen.",
         "audioUnmuteBlockedDescription": "Mic unmute operation has been temporarily blocked because of system limits.",
         "audioUnmuteBlockedTitle": "Mic unmute blocked!",
+        "autoRoomPasswordDescription": "Your invite link includes the password, so people with the link join directly. Anyone else waits in the lobby for you to admit them.",
+        "autoRoomPasswordTitle": "Room locked with a password",
         "chatMessages": "Chat messages",
         "connectedOneMember": "{{name}} joined the meeting",
         "connectedThreePlusMembers": "{{name}} and many others joined the meeting",
@@ -1395,6 +1397,8 @@
             "participants": "Open participants panel. {{participantsCount}} participants",
             "party": "Party",
             "pip": "Toggle Picture-in-Picture mode",
+            "popIn": "Return the call to the page",
+            "popOut": "Pop the call out into a floating window",
             "pray": "Pray",
             "privateMessage": "Send private message",
             "profile": "Edit your profile",
@@ -1432,9 +1436,7 @@
             "videomute": "Stop camera",
             "videomuteGUMPending": "Connecting your camera",
             "videounmute": "Start camera",
-            "wave": "Wave",
-            "popOut": "Pop the call out into a floating window",
-            "popIn": "Return the call to the page"
+            "wave": "Wave"
         },
         "addPeople": "Add people to your call",
         "advancedAudioSettings": {
@@ -1522,6 +1524,8 @@
         "party": "Party",
         "pip": "Enter Picture-in-Picture mode",
         "polls": "Polls",
+        "popIn": "Return to page",
+        "popOut": "Pop out",
         "pray": "Pray",
         "privateMessage": "Send private message",
         "profile": "Edit your profile",
@@ -1564,9 +1568,7 @@
         "videomute": "Stop camera",
         "videomuteGUMPending": "Connecting your camera",
         "videounmute": "Start camera",
-        "wave": "Wave",
-        "popOut": "Pop out",
-        "popIn": "Return to page"
+        "wave": "Wave"
     },
     "transcribing": {
         "ccButtonTooltip": "Start / Stop subtitles",

@@ -5,13 +5,13 @@ import { connect } from 'react-redux';
 import { createInviteDialogEvent } from '../../../../analytics/AnalyticsEvents';
 import { sendAnalytics } from '../../../../analytics/functions';
 import { IReduxState } from '../../../../app/types';
-import { getInviteURL } from '../../../../base/connection/functions';
 import { translate } from '../../../../base/i18n/functions';
 import { JitsiRecordingConstants } from '../../../../base/lib-jitsi-meet';
 import Dialog from '../../../../base/ui/components/web/Dialog';
 import { StatusCode } from '../../../../base/util/uri';
 import { isDynamicBrandingDataLoaded } from '../../../../dynamic-branding/functions.any';
 import { getActiveSession } from '../../../../recording/functions';
+import { getShareableInviteURL } from '../../../../room-lock/functions';
 import { updateDialInNumbers } from '../../../actions.web';
 import {
     _getDefaultPhoneNumber,
@@ -216,7 +216,7 @@ function mapStateToProps(state: IReduxState, ownProps: Partial<IProps>) {
             t: ownProps.t }),
         _inviteAppName: inviteAppName,
         _inviteContactsVisible: interfaceConfig.ENABLE_DIAL_OUT && !hideInviteContacts,
-        _inviteUrl: getInviteURL(state),
+        _inviteUrl: getShareableInviteURL(state),
         _isDialInOverLimit: isDialInOverLimit,
         _liveStreamViewURL: currentLiveStreamingSession?.liveStreamViewURL,
         _phoneNumber: phoneNumber

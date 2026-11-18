@@ -198,6 +198,13 @@ export interface IConfig {
     };
     autoCaptionOnRecord?: boolean;
     autoKnockLobby?: boolean;
+
+    /**
+     * Jeffsi: the participant who opens a room locks it with a random password
+     * and the invite link carries it (#pw=...). Requires prosody's
+     * mod_muc_token_lobby, which makes the first joiner owner.
+     */
+    autoRoomPassword?: boolean;
     backgroundAlpha?: number;
     bosh?: string;
     brandingDataUrl?: string;

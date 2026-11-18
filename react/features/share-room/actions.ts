@@ -1,5 +1,5 @@
 import { IStore } from '../app/types';
-import { getInviteURL } from '../base/connection/functions';
+import { getShareableInviteURL } from '../room-lock/functions';
 
 import {
     BEGIN_SHARE_ROOM,
@@ -18,7 +18,7 @@ export function beginShareRoom(roomURL?: string) {
     return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
         if (!roomURL) {
             // eslint-disable-next-line no-param-reassign
-            roomURL = getInviteURL(getState);
+            roomURL = getShareableInviteURL(getState);
         }
 
         dispatch({

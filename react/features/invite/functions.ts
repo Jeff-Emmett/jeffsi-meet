@@ -21,6 +21,7 @@ import {
 } from '../base/util/uri';
 import { isVpaasMeeting } from '../jaas/functions';
 import { getActiveSession } from '../recording/functions';
+import { getShareableInviteURL } from '../room-lock/functions';
 
 import { getDialInConferenceID, getDialInNumbers } from './_utils';
 import {
@@ -321,6 +322,7 @@ export function getInviteTextiOS({
     const localParticipantName = localParticipant?.name;
 
     const inviteURL = _decodeRoomURI(inviteUrl);
+    const shareableURL = _decodeRoomURI(getShareableInviteURL(state));
 
     let invite = localParticipantName
         ? t?.('info.inviteTextiOSPersonal', { name: localParticipantName })
@@ -328,7 +330,7 @@ export function getInviteTextiOS({
 
     invite += ' ';
 
-    invite += t?.('info.inviteTextiOSInviteUrl', { inviteUrl });
+    invite += t?.('info.inviteTextiOSInviteUrl', { inviteUrl: shareableURL });
     invite += ' ';
 
     if (shouldDisplayDialIn(dialIn) && isSharingEnabled(sharingFeatures.dialIn)) {
@@ -362,12 +364,13 @@ export function getInviteText({
     const localParticipantName = localParticipant?.name;
 
     const inviteURL = _decodeRoomURI(inviteUrl);
+    const shareableURL = _decodeRoomURI(getShareableInviteURL(state));
     let invite = localParticipantName
         ? t?.('info.inviteURLFirstPartPersonal', { name: localParticipantName })
         : t?.('info.inviteURLFirstPartGeneral');
 
     invite += t?.('info.inviteURLSecondPart', {
-        url: inviteURL
+        url: shareableURL
     });
 
     if (liveStreamViewURL) {

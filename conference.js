@@ -156,6 +156,7 @@ import {
 import { suspendDetected } from './react/features/power-monitor/actions';
 import { initPrejoin, isPrejoinPageVisible } from './react/features/prejoin/functions';
 import { disableReceiver, stopReceiver } from './react/features/remote-control/actions';
+import { getRoomPasswordFromURL } from './react/features/room-lock/functions';
 import { setScreenAudioShareState } from './react/features/screen-share/actions.web';
 import { isScreenAudioShared } from './react/features/screen-share/functions';
 import { toggleScreenshotCaptureSummary } from './react/features/screenshot-capture/actions';
@@ -347,7 +348,10 @@ class ConferenceConnector {
         const replaceParticipant = getReplaceParticipant(APP.store.getState());
 
         // the local storage overrides here and in connection.js can be used by jibri
-        room.join(jitsiLocalStorage.getItem('xmpp_conference_password_override'), replaceParticipant);
+        room.join(
+            jitsiLocalStorage.getItem('xmpp_conference_password_override')
+                || getRoomPasswordFromURL(APP.store.getState()),
+            replaceParticipant);
     }
 }
 
