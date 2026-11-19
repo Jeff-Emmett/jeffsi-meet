@@ -1,5 +1,6 @@
 import { IReduxState } from '../app/types';
 import { hasAvailableDevices } from '../base/devices/functions.web';
+import { isMobileBrowser } from '../base/environment/utils';
 import { MEET_FEATURES } from '../base/jwt/constants';
 import { isJwtFeatureEnabled } from '../base/jwt/functions';
 import { IGUMPendingState } from '../base/media/types';
@@ -24,7 +25,22 @@ export function getToolboxHeight() {
 }
 
 /**
+ * Whether the device is driven by touch first (phones and tablets, including iPadOS,
+ * which reports as desktop). Touchscreen laptops have a fine primary pointer
+ * and keep the hover-driven auto-hide.
+ *
+ * @returns {boolean}
+ */
+export function isTouchPrimaryDevice() {
+    return isMobileBrowser() || Boolean(window.matchMedia?.('(pointer: coarse)').matches);
+}
+
+/**
  * Indicates if the toolbox is visible or not.
+ *
+ * On touch-first devices the toolbox never auto-hides: there is no hover to
+ * bring it back, and a hidden bar left phone users unable to find mute or
+ * hang-up.
  *
  * @param {IReduxState} state - The state from the Redux store.
  * @returns {boolean} - True to indicate that the toolbox is visible, false -
@@ -45,6 +61,7 @@ export function isToolboxVisible(state: IReduxState) {
                 timeoutID
                 || visible
                 || alwaysVisible
+                || isTouchPrimaryDevice()
                 || audioSettingsVisible
                 || videoSettingsVisible
                 || whiteboardVisible

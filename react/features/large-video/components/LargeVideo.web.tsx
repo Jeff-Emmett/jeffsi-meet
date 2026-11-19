@@ -19,6 +19,7 @@ import { getVerticalViewMaxWidth, isFilmstripResizable } from '../../filmstrip/f
 import SharedVideo from '../../shared-video/components/web/SharedVideo';
 import Captions from '../../subtitles/components/web/Captions';
 import { areClosedCaptionsEnabled } from '../../subtitles/functions.any';
+import { showToolbox } from '../../toolbox/actions.web';
 import { setTileView } from '../../video-layout/actions.web';
 import { exitTileFocus, isTileFocusActive } from '../../video-layout/tileFocus';
 import Whiteboard from '../../whiteboard/components/web/Whiteboard';
@@ -370,7 +371,9 @@ class LargeVideo extends Component<IProps> {
     }
 
     /**
-     * Sets view to tile view on double tap.
+     * Sets view to tile view on double tap; a single tap reveals the toolbar.
+     * This handler stops propagation, so the videospace tap-to-reveal in
+     * Conference never sees taps on the stage.
      *
      * @param {Object} e - The event.
      * @private
@@ -386,6 +389,7 @@ class LargeVideo extends Component<IProps> {
             this.props.dispatch(setTileView(true));
         } else {
             this._tappedTimeout = window.setTimeout(this._clearTapTimeout, 300);
+            this.props.dispatch(showToolbox());
         }
     }
 
